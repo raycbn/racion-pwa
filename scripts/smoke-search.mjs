@@ -61,6 +61,14 @@ if (broad.products.length === 0) {
 console.log("OK búsqueda federada de yogur →", broad.products.length,
   "productos; diagnóstico por fuente:", JSON.stringify(broad.sourceStats || broad.sources));
 
+const repeated = await search("Yogur");
+if (!Array.isArray(repeated.sourceStats) ||
+    !repeated.sourceStats.every(stat => String(stat.status).startsWith("cached-"))) {
+  throw new Error("La segunda búsqueda no reutilizó la caché por fuente: " +
+    JSON.stringify(repeated.sourceStats || repeated));
+}
+console.log("OK caché compartida → la segunda búsqueda no volvió a consultar catálogos externos");
+
 const checks = [
   {
     query: "Yogur Carrefour",
