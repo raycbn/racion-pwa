@@ -36,6 +36,21 @@ async function search(query) {
   return body;
 }
 
+const broad = await search("Yogur");
+const notYogurt = broad.products.filter(product =>
+  !/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(normalize(product.name))
+);
+if (notYogurt.length) {
+  throw new Error("La búsqueda general mezcló otros alimentos: " +
+    notYogurt.map(p => p.name).join("; "));
+}
+if (broad.products.length === 0) {
+  throw new Error("La búsqueda federada de yogur no devolvió productos; sources=" +
+    broad.sources.join(", "));
+}
+console.log("OK búsqueda federada de yogur →", broad.products.length,
+  "productos; fuentes que respondieron:", broad.sources.join(", "));
+
 const checks = [
   {
     query: "Yogur Carrefour",
