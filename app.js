@@ -82,18 +82,150 @@
     const n=raw.nutriments||{};
     let kcal=numOrNull(n['energy-kcal_100g'] ?? n['energy-kcal_value']);
     if(kcal===null){const kj=numOrNull(n['energy-kj_100g'] ?? n['energy-kj_value']);if(kj!==null)kcal=kj/4.184;}
-    return {id:`off-${raw.code||crypto.randomUUID()}`,name:raw.product_name_es||raw.product_name||raw.product_name_en||'Producto sin nombre',brand:raw.brands||'',unit:raw.product_quantity_unit==='ml'?'ml':'g',kcal,protein:numOrNull(n.proteins_100g),carbs:numOrNull(n.carbohydrates_100g),fat:numOrNull(n.fat_100g),image:raw.image_front_small_url||raw.image_front_url||'',barcode:raw.code||'',source,confidence:'external',updatedAt:new Date().toISOString(),ingredients:raw.ingredients_text_es||raw.ingredients_text||'',nutriscore:raw.nutriscore_grade||''};
+    return {id:'off-'+(raw.code||crypto.randomUUID()),name:raw.product_name_es||raw.product_name||raw.product_name_en||'Producto sin nombre',brand:raw.brands||'',unit:raw.product_quantity_unit==='ml'?'ml':'g',kcal,protein:numOrNull(n.proteins_100g),carbs:numOrNull(n.carbohydrates_100g),fat:numOrNull(n.fat_100g),image:raw.image_front_small_url||raw.image_front_url||'',barcode:raw.code||'',source,confidence:'external',updatedAt:new Date().toISOString(),ingredients:raw.ingredients_text_es||raw.ingredients_text||'',nutriscore:raw.nutriscore_grade||''};
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
+  const SEARCH_CACHE_KEY='racion-search-cache-v2';
+  const SEARCH_CACHE_TTL=7*24*60*60*1000;
+  const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
+  let lastSearchSources=[];
+  let searchCache={};
+  try{searchCache=JSON.parse(localStorage.getItem(SEARCH_CACHE_KEY)||'{}')||{};}catch{searchCache={};}
+  const genericTranslations=[
+    ['pechuga de pollo','chicken breast'],['pollo','chicken'],['pechuga de pavo','turkey breast'],['pavo','turkey'],['carne picada de ternera','ground beef'],['ternera','beef'],['carne de vacuno','beef'],['lomo de cerdo','pork loin'],['cerdo','pork'],
+    ['leche desnatada','skim milk'],['leche semidesnatada','2% milk'],['leche entera','whole milk'],['leche','milk'],['yogur natural','plain yogurt'],['yogur griego','greek yogurt'],['yogur','yogurt'],['yogurt','yogurt'],['huevos','egg'],['huevo','egg'],['claras de huevo','egg white'],
+    ['arroz cocido','cooked rice'],['arroz blanco','white rice'],['arroz','rice'],['pasta cocida','cooked pasta'],['pasta','pasta'],['avena','oats'],['pan integral','whole wheat bread'],['pan blanco','white bread'],['pan','bread'],
+    ['patatas cocidas','boiled potatoes'],['patata','potato'],['patatas','potatoes'],['tomate','tomato'],['plátano','banana'],['platano','banana'],['manzana','apple'],['aguacate','avocado'],['aceite de oliva','olive oil'],
+    ['salmón','salmon'],['salmon','salmon'],['atún','tuna'],['atun','tuna'],['merluza','hake'],['bacalao','cod'],['lentejas','lentils'],['garbanzos','chickpeas'],['alubias','beans'],['brócoli','broccoli'],['brocoli','broccoli'],['zanahoria','carrot'],['almendras','almonds'],['nueces','walnuts'],['queso fresco','fresh cheese'],['queso','cheese'],['salsa de soja','soy sauce'],['mantequilla','butter'],['café','coffee'],['cafe','coffee'],['naranja','orange'],['fresas','strawberries']
+  ];
+  function fdcQueryFor(term){
+    const q=normalize(term);
+    for(const pair of genericTranslations){const es=normalize(pair[0]);if(q===es)return pair[1];}
+    return term;
+  }
+  async function getJson(url,timeoutMs=9500){
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs);
+    try{
+      const res=await fetch(url,{method:'GET',headers:{'Accept':'application/json'},signal:controller.signal,cache:'no-store'});
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      return await res.json();
+    }finally{clearTimeout(timer);}
+  }
+  async function searchOpenFoodFacts(term){
+    const params=new URLSearchParams({
+      search_terms:term,search_simple:'1',action:'process',json:'1',page_size:'8',page:'1',
+      fields:'code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade'
+    });
+    const data=await getJson(OFF_BASE+'/cgi/search.pl?'+params.toString(),4500);
+    return (data.products||[]).map(raw=>makeProduct(raw,'Open Food Facts')).filter(isUsableProduct);
+  }
+  function fdcNutrient(raw, ids, names){
+    const list=raw.foodNutrients||[];
+    const byId=list.find(n=>ids.includes(Number(n.nutrientId ?? n.nutrient?.id)) && numOrNull(n.value ?? n.amount)!==null);
+    if(byId)return numOrNull(byId.value ?? byId.amount);
+    const byName=list.find(n=>names.some(name=>String(n.nutrientName ?? n.nutrient?.name ?? '').toLowerCase().includes(name)) && numOrNull(n.value ?? n.amount)!==null);
+    return byName?numOrNull(byName.value ?? byName.amount):null;
+  }
+  function makeFdcProduct(raw){
+    const unit=String(raw.servingSizeUnit||'').toLowerCase()==='ml'?'ml':'g';
+    const barcode=String(raw.gtinUpc||'').replace(/\D/g,'');
+    return {
+      id:'fdc-'+(raw.fdcId||crypto.randomUUID()),
+      name:raw.description||raw.lowercaseDescription||'Alimento sin nombre',
+      brand:raw.brandName||raw.brandOwner||'',
+      unit,
+      kcal:fdcNutrient(raw,[1008,2047,2048],['energy']),
+      protein:fdcNutrient(raw,[1003],['protein']),
+      carbs:fdcNutrient(raw,[1005],['carbohydrate']),
+      fat:fdcNutrient(raw,[1004],['total lipid','total fat']),
+      image:'',
+      barcode,
+      source:'USDA FoodData Central',
+      confidence:'external',
+      updatedAt:new Date().toISOString(),
+      ingredients:raw.ingredients||'',
+      fdcId:raw.fdcId||null,
+      dataType:raw.dataType||''
+    };
+  }
+  async function searchFoodDataCentral(term){
+    const query=fdcQueryFor(term);
+    const params=new URLSearchParams({query,pageSize:'8',api_key:FDC_DEMO_KEY});
+    const data=await getJson('https://api.nal.usda.gov/fdc/v1/foods/search?'+params.toString(),4500);
+    return (data.foods||[]).map(makeFdcProduct).filter(isUsableProduct);
+  }
+  function mergeProducts(...groups){
+    const seen=new Set(),out=[];
+    for(const group of groups)for(const p of (group||[])){
+      const barcode=String(p.barcode||'').replace(/\D/g,'');
+      const key=barcode?'barcode:'+barcode:'name:'+normalize(p.brand+' '+p.name);
+      if(!p.name||seen.has(key))continue;
+      seen.add(key);out.push(p);
+    }
+    return out;
+  }
+  function rememberSearch(term, products, sources){
+    lastSearchSources=sources.slice();
+    if(!products.length)return;
+    searchCache[normalize(term)]={savedAt:Date.now(),sources:sources.slice(),products:products.slice(0,20)};
+    const keys=Object.keys(searchCache).sort((a,b)=>(searchCache[b].savedAt||0)-(searchCache[a].savedAt||0));
+    for(const key of keys.slice(80))delete searchCache[key];
+    try{localStorage.setItem(SEARCH_CACHE_KEY,JSON.stringify(searchCache));}catch(e){console.warn('La caché de búsqueda está llena',e);}
+    const byId=new Map(state.products.map(p=>[p.id,p]));
+    let changed=false;
+    for(const product of products){
+      const prior=byId.get(product.id);
+      if(!prior){state.products.unshift(product);byId.set(product.id,product);changed=true;}
+      else if((prior.kcal===null && product.kcal!==null) || (!prior.image && product.image)){
+        Object.assign(prior,product);changed=true;
+      }
+    }
+    if(state.products.length>500)state.products=state.products.slice(0,500);
+    if(changed)saveState();
+  }
   async function offSearch(term){
-    const url=`${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(term)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade`;
-    const res=await fetch(url,{headers:{'Accept':'application/json'}});if(!res.ok)throw new Error(`Búsqueda externa: HTTP ${res.status}`);const data=await res.json();
-    return (data.products||[]).map(raw=>makeProduct(raw)).filter(isUsableProduct);
+    const clean=String(term||'').trim();
+    if(!clean) return [];
+    const key=normalize(clean);
+    const cached=searchCache[key];
+    if(cached && Date.now()-cached.savedAt<SEARCH_CACHE_TTL && Array.isArray(cached.products)){
+      lastSearchSources=['Caché local'];return cached.products;
+    }
+    const local=state.products.filter(p=>normalize(p.name+' '+(p.brand||'')).includes(key)||normalize(p.name)===key).slice(0,8);
+    if(local.length>=5){lastSearchSources=['Catálogo local'];return local;}
+    const checks=await Promise.allSettled([searchOpenFoodFacts(clean),searchFoodDataCentral(clean)]);
+    const names=['Open Food Facts','USDA FoodData Central'];
+    const sources=[],found=[],errors=[];
+    checks.forEach((result,i)=>{
+      if(result.status==='fulfilled'){
+        sources.push(names[i]);
+        if(result.value.length)found.push(result.value);
+      }else{
+        errors.push(names[i]+': '+(result.reason?.message||'fallo de conexión'));
+        console.warn('Fallo de fuente de alimentos '+names[i],result.reason);
+      }
+    });
+    const merged=mergeProducts(local,...found);
+    if(merged.length){
+      rememberSearch(clean,merged,sources);
+      return merged.slice(0,12);
+    }
+    lastSearchSources=sources;
+    if(errors.length===checks.length)throw new Error('Los dos catálogos externos no han respondido. '+errors.join(' · '));
+    return [];
   }
   async function offBarcode(code){
-    const res=await fetch(`${OFF_BASE}/api/v2/product/${encodeURIComponent(code)}.json?fields=code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade`,{headers:{'Accept':'application/json'}});
-    if(!res.ok)throw new Error(`Consulta por código: HTTP ${res.status}`);const data=await res.json();if(data.status!==1||!data.product)throw new Error('No encontramos ese código en Open Food Facts. Puedes crear el producto con su etiqueta.');return makeProduct(data.product);
+    const local=state.products.find(p=>String(p.barcode||'').replace(/\D/g,'')===String(code).replace(/\D/g,''));
+    if(local)return local;
+    try{
+      const res=await getJson(OFF_BASE+'/api/v2/product/'+encodeURIComponent(code)+'.json?fields=code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade');
+      if(res.status===1&&res.product)return makeProduct(res.product,'Open Food Facts');
+    }catch(e){console.warn('Open Food Facts no respondió al consultar el código',e);}
+    const candidates=await searchFoodDataCentral(code);
+    const exact=candidates.find(p=>String(p.barcode||'').replace(/\D/g,'')===String(code).replace(/\D/g,''));
+    if(exact){rememberSearch(code,[exact],['USDA FoodData Central']);return exact;}
+    throw new Error('No encontramos ese código en los catálogos disponibles. Puedes crear el producto con su etiqueta nutricional.');
   }
   function existingMatch(term){
     const q=normalize(term);if(!q)return null;
@@ -162,10 +294,34 @@
   });
   $('openSearchBtn').addEventListener('click',()=>{ $('productSearchInput').value='';$('searchResults').innerHTML='<div class="search-placeholder"><span>⌕</span><p>Busca un producto por nombre, marca o código.</p></div>';openDialog(dialogs.searchDialog);setTimeout(()=>$('productSearchInput').focus(),100); });
   $('searchForm').addEventListener('submit',async e=>{
-    e.preventDefault();const q=$('productSearchInput').value.trim();if(!q)return;const out=$('searchResults');out.innerHTML='<div class="search-placeholder"><span>◌</span><p>Buscando productos…</p></div>';
-    const local=state.products.filter(p=>normalize(`${p.brand} ${p.name}`).includes(normalize(q))).slice(0,5);
-    try{const remote=await offSearch(q);const all=[...local,...remote.filter(r=>!local.some(p=>p.barcode&&p.barcode===r.barcode))].slice(0,10);out.innerHTML='';if(!all.length){out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>No encontramos resultados. Puedes crear el producto introduciendo su etiqueta nutricional.</p></div>';return;}all.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));}
-    catch(err){out.innerHTML='';if(local.length){local.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));}else{out.innerHTML=`<div class="search-placeholder"><span>!</span><p>No se pudo consultar Open Food Facts ahora. Revisa la conexión o crea el producto manualmente.</p></div>`;}console.warn(err);}
+    e.preventDefault();
+    const q=$('productSearchInput').value.trim();
+    if(!q)return;
+    const out=$('searchResults'),status=$('searchSourceStatus');
+    out.innerHTML='<div class="search-placeholder"><span>◌</span><p>Buscando en varios catálogos…</p></div>';
+    if(status)status.textContent='Consultando el catálogo local y las bases nutricionales externas.';
+    const local=state.products.filter(p=>normalize((p.brand||'')+' '+p.name).includes(normalize(q))).slice(0,8);
+    try{
+      const remote=await offSearch(q);
+      const all=mergeProducts(local,remote).slice(0,12);
+      out.innerHTML='';
+      if(status)status.textContent='Fuentes: '+(lastSearchSources.length?lastSearchSources.join(' · '):'catálogo local')+'. Los resultados encontrados se guardan en la caché de este dispositivo.';
+      if(!all.length){
+        out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>No encontramos una coincidencia para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.</p></div>';
+        return;
+      }
+      all.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
+    }catch(err){
+      out.innerHTML='';
+      if(local.length){
+        local.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
+        if(status)status.textContent='Mostrando productos guardados; los catálogos externos no respondieron. Puedes seguir usando los datos locales.';
+      }else{
+        out.innerHTML='<div class="search-placeholder"><span>!</span><p>No respondieron los catálogos de alimentos en este intento. Comprueba la conexión, vuelve a intentarlo o introduce los datos de la etiqueta manualmente.</p></div>';
+        if(status)status.textContent='No se completó la búsqueda externa. No se ha registrado ningún alimento.';
+      }
+      console.warn('Búsqueda de productos no disponible',err);
+    }
   });
   function openQuantityForProduct(product){
     selectedProduct=product;$('quantityTitle').textContent=product.name;$('quantityUnit').textContent=product.unit;$('quantityInput').value=product.unit==='ml'?'10':'100';$('quantityMeal').value=$('mealSelect').value;const img=product.image?`<img src="${esc(product.image)}" alt="">`:'<div class="result-fallback">◉</div>';$('quantityProduct').innerHTML=`${img}<div><strong>${esc(product.name)}</strong><small>${esc(product.brand||'Sin marca')} · ${product.kcal===null?'Calorías sin dato':`${fmt(product.kcal)} kcal/100${product.unit}`}</small></div>`;renderQuantityPreview();closeDialog(dialogs.searchDialog);closeDialog(dialogs.reviewDialog);openDialog(dialogs.quantityDialog);
