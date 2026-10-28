@@ -90,6 +90,7 @@
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
+  let lastSearchDiagnostics=[];
   let lastSearchError='';
   let searchCache={};
   try{searchCache=JSON.parse(localStorage.getItem(SEARCH_CACHE_KEY)||'{}')||{};}catch{searchCache={};}
@@ -338,13 +339,14 @@
         nutritionSourceLicense:p.nutrition_source_license||'',
         nutritionSourceUrl:p.nutrition_source_url||''
       })).filter(isUsableProduct);
-      return {products,sources:Array.isArray(data.sources)?data.sources:[],cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
+      return {products,sources:Array.isArray(data.sources)?data.sources:[],sourceStats:Array.isArray(data.sourceStats)?data.sourceStats:[],cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
     }finally{clearTimeout(timer);}
   }
   async function offSearch(term){
     const clean=String(term||'').trim();
     if(!clean)return [];
     lastSearchError='';
+    lastSearchDiagnostics=[];
     const key=normalize(clean);
     const retailer=retailerIntentForSearch(clean);
     const cached=searchCache[key];
@@ -357,6 +359,7 @@
     const local=localAll.slice(0,8);
     try{
       const shared=await searchSharedCatalog(clean);
+      lastSearchDiagnostics=Array.isArray(shared.sourceStats)?shared.sourceStats:[];
       const sharedProducts=shared.products.filter(p=>productMatchesSearch(p,clean,retailer));
       if(sharedProducts.length){
         const merged=mergeProducts(local,sharedProducts);
@@ -484,6 +487,25 @@
     saveState();render();closeDialog(dialogs.reviewDialog);$('naturalInput').value='';pendingDrafts=[];toast(`${good.length} ${good.length===1?'alimento añadido':'alimentos añadidos'} al diario`);
   });
   $('openSearchBtn').addEventListener('click',()=>{ $('productSearchInput').value='';$('searchResults').innerHTML='<div class="search-placeholder"><span>⌕</span><p>Busca un producto por nombre, marca o código.</p></div>';openDialog(dialogs.searchDialog);setTimeout(()=>$('productSearchInput').focus(),100); });
+  function searchSourceSummary(products){
+    const stats=Array.isArray(lastSearchDiagnostics)?lastSearchDiagnostics:[];
+    const parts=[];
+    const withMatches=stats.filter(item=>Number(item.products)>0&&!String(item.status||'').endsWith('error')).length;
+    if(stats.length)parts.push(withMatches+' fuentes con coincidencias');
+    else if(lastSearchSources.length)parts.push('Fuentes: '+lastSearchSources.join(' · '));
+    else parts.push(products.length?'Catálogo compartido de Ración':'Sin coincidencias');
+    const errors=stats.filter(item=>String(item.status||'').endsWith('error'));
+    if(errors.length){
+      const names=[...new Set(errors.map(item=>String(item.source||'Fuente externa')))];
+      const shown=names.slice(0,2).join(', ');
+      const more=names.length>2?' y '+(names.length-2)+' más':'';
+      parts.push(names.length+' temporalmente no disponibles: '+shown+more);
+    }
+    const enriched=products.filter(product=>Boolean(product.nutritionSource)).length;
+    if(enriched)parts.push(enriched+' producto'+(enriched===1?'':'s')+' con nutrientes enlazados por código de barras');
+    parts.push('Los nutrientes que faltan no se estiman.');
+    return parts.join(' · ');
+  }
   $('searchForm').addEventListener('submit',async e=>{
     e.preventDefault();
     const q=$('productSearchInput').value.trim();
@@ -498,7 +520,7 @@
       const remote=await offSearch(q);
       const all=mergeProducts(local,remote.filter(matchesQueryScope)).slice(0,12);
       out.innerHTML='';
-      if(status)status.textContent='Fuentes: '+(lastSearchSources.length?lastSearchSources.join(' · '):'sin coincidencias')+'. Se guardan localmente solo los resultados válidos.';
+      if(status)status.textContent=searchSourceSummary(all);
       if(!all.length){
         const msg=lastSearchError
           ?esc(lastSearchError)
