@@ -1,0 +1,23 @@
+name: Warm shared food catalog
+on:
+  push:
+    branches: [main]
+    paths:
+      - "scripts/catalog-seed.mjs"
+      - ".github/workflows/catalog-seed.yml"
+  schedule:
+    - cron: "20 2 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify seed script syntax
+        run: node --check scripts/catalog-seed.mjs
+      - name: Warm Spanish supermarket catalogs
+        run: node scripts/catalog-seed.mjs
