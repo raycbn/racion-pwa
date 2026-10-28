@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v5';
+  const SEARCH_CACHE_KEY='racion-search-cache-v6';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -151,10 +151,17 @@
     });
   }
   function fdcQueryFor(term){
-    const q=' '+normalize(term)+' ';
+    const q=normalize(term);
     const matches=[...genericTranslations].sort((a,b)=>normalize(b[0]).length-normalize(a[0]).length);
-    const match=matches.find(pair=>q.includes(' '+normalize(pair[0])+' '));
-    return match?match[1]:term;
+    for(const pair of matches){
+      const es=normalize(pair[0]),en=normalize(pair[1]);
+      if(q===es)return en;
+      if(q.startsWith(es+' '))return normalize(en+' '+q.slice(es.length));
+      if(q.endsWith(' '+es))return normalize(q.slice(0,-es.length)+' '+en);
+      const mid=q.indexOf(' '+es+' ');
+      if(mid>=0)return normalize(q.slice(0,mid)+' '+en+' '+q.slice(mid+es.length+2));
+    }
+    return term;
   }
   async function getJson(url,timeoutMs=9500){
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs);
