@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v2';
+  const SEARCH_CACHE_KEY='racion-search-cache-v3';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -99,10 +99,39 @@
     ['patatas cocidas','boiled potatoes'],['patata','potato'],['patatas','potatoes'],['tomate','tomato'],['plátano','banana'],['platano','banana'],['manzana','apple'],['aguacate','avocado'],['aceite de oliva','olive oil'],
     ['salmón','salmon'],['salmon','salmon'],['atún','tuna'],['atun','tuna'],['merluza','hake'],['bacalao','cod'],['lentejas','lentils'],['garbanzos','chickpeas'],['alubias','beans'],['brócoli','broccoli'],['brocoli','broccoli'],['zanahoria','carrot'],['almendras','almonds'],['nueces','walnuts'],['queso fresco','fresh cheese'],['queso','cheese'],['salsa de soja','soy sauce'],['mantequilla','butter'],['café','coffee'],['cafe','coffee'],['naranja','orange'],['fresas','strawberries']
   ];
+  const RETAILERS=[
+    {key:'mercadona',aliases:['mercadona','hacendado']},
+    {key:'carrefour',aliases:['carrefour']},
+    {key:'lidl',aliases:['lidl','milbona','vemondo','cien']},
+    {key:'aldi',aliases:['aldi','milsani','gut bio']},
+    {key:'dia',aliases:['dia','dia lactea']},
+    {key:'eroski',aliases:['eroski']},
+    {key:'alcampo',aliases:['alcampo','auchan']},
+    {key:'consum',aliases:['consum']},
+    {key:'ahorramas',aliases:['ahorramas']},
+    {key:'el corte ingles',aliases:['el corte ingles','hipercor']},
+    {key:'bonpreu',aliases:['bonpreu','esclat']}
+  ];
+  function retailerIntentForSearch(term){
+    const n=' '+normalize(term)+' ';
+    for(const retailer of RETAILERS){
+      const matched=[retailer.key,...retailer.aliases].find(alias=>n.includes(' '+normalize(alias)+' '));
+      if(matched)return {...retailer,matched:normalize(matched)};
+    }
+    return null;
+  }
+  function stripRetailerFromSearch(term,retailer){
+    return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\\s+/g,' ').trim();
+  }
+  function productMatchesRetailer(product,retailer){
+    const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
+    return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
+  }
   function fdcQueryFor(term){
-    const q=normalize(term);
-    for(const pair of genericTranslations){const es=normalize(pair[0]);if(q===es)return pair[1];}
-    return term;
+    const q=' '+normalize(term)+' ';
+    const matches=[...genericTranslations].sort((a,b)=>normalize(b[0]).length-normalize(a[0]).length);
+    const match=matches.find(pair=>q.includes(' '+normalize(pair[0])+' '));
+    return match?match[1]:term;
   }
   async function getJson(url,timeoutMs=9500){
     const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -221,15 +250,20 @@
     const clean=String(term||'').trim();
     if(!clean)return [];
     const key=normalize(clean);
+    const retailer=retailerIntentForSearch(clean);
     const cached=searchCache[key];
     if(cached&&Date.now()-cached.savedAt<SEARCH_CACHE_TTL&&Array.isArray(cached.products)){
-      lastSearchSources=['Caché local'];return cached.products;
+      const products=retailer?cached.products.filter(p=>productMatchesRetailer(p,retailer)):cached.products;
+      if(products.length){lastSearchSources=['Caché local'];return products;}
+      // Don't reuse an old fuzzy result for a retailer-specific query.
     }
-    const local=state.products.filter(p=>normalize(p.name+' '+(p.brand||'')).includes(key)||normalize(p.name)===key).slice(0,8);
+    const localAll=state.products.filter(p=>normalize(p.name+' '+(p.brand||'')).includes(key)||normalize(p.name)===key);
+    const local=retailer?localAll.filter(p=>productMatchesRetailer(p,retailer)).slice(0,8):localAll.slice(0,8);
     try{
       const shared=await searchSharedCatalog(clean);
-      if(shared.products.length){
-        const merged=mergeProducts(local,shared.products);
+      const sharedProducts=retailer?shared.products.filter(p=>productMatchesRetailer(p,retailer)):shared.products;
+      if(sharedProducts.length){
+        const merged=mergeProducts(local,sharedProducts);
         rememberSearch(clean,merged,shared.sources.length?shared.sources:['Catálogo compartido de Ración']);
         lastSearchSources=shared.sources.length?shared.sources:['Catálogo compartido de Ración'];
         return merged.slice(0,12);
@@ -237,6 +271,21 @@
       lastSearchSources=shared.sources;
       if(shared.cached)return local;
     }catch(error){console.warn('Catálogo compartido de Ración no disponible; se consultan fuentes externas',error);}
+    if(retailer){
+      const base=stripRetailerFromSearch(clean,retailer);
+      const alternateBrand=retailer.aliases.find(a=>normalize(a)!==retailer.key);const terms=[...new Set([clean,base,alternateBrand?base+' '+alternateBrand:clean].filter(Boolean))].slice(0,3);
+      const checks=await Promise.allSettled(terms.map(searchOpenFoodFacts));
+      const found=[],errors=[];
+      checks.forEach(result=>{
+        if(result.status==='fulfilled')found.push(result.value.filter(p=>productMatchesRetailer(p,retailer)));
+        else{errors.push(result.reason?.message||'fallo de conexión');console.warn('Búsqueda de producto de supermercado fallida',result.reason);}
+      });
+      const merged=mergeProducts(local,...found);
+      lastSearchSources=checks.some(r=>r.status==='fulfilled')?['Open Food Facts']:[];
+      if(merged.length){rememberSearch(clean,merged,lastSearchSources);return merged.slice(0,12);}
+      if(errors.length===checks.length)throw new Error('No responde el catálogo de productos de supermercado. Prueba de nuevo o introduce los valores de la etiqueta.');
+      return [];
+    }
     const checks=await Promise.allSettled([searchOpenFoodFacts(clean),searchFoodDataCentral(clean)]);
     const names=['Open Food Facts','USDA FoodData Central'];
     const sources=[],found=[],errors=[];
