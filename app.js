@@ -270,10 +270,13 @@
       }
       lastSearchSources=shared.sources;
       if(shared.cached)return local;
+      if(shared.sources.length)return local;
     }catch(error){console.warn('Catálogo compartido de Ración no disponible; se consultan fuentes externas',error);}
     if(retailer){
       const base=stripRetailerFromSearch(clean,retailer);
-      const alternateBrand=retailer.aliases.find(a=>normalize(a)!==retailer.key);const terms=[...new Set([clean,base,alternateBrand?base+' '+alternateBrand:clean].filter(Boolean))].slice(0,3);
+      const alternateBrand=retailer.aliases.find(a=>normalize(a)!==retailer.key);
+      const preferred=base?(base+' '+(alternateBrand||retailer.key)):clean;
+      const terms=[...new Set([preferred,clean].filter(Boolean))].slice(0,2);
       const checks=await Promise.allSettled(terms.map(searchOpenFoodFacts));
       const found=[],errors=[];
       checks.forEach(result=>{
