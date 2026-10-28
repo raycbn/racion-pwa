@@ -49,7 +49,7 @@ if (broad.products.length === 0) {
     broad.sources.join(", "));
 }
 console.log("OK búsqueda federada de yogur →", broad.products.length,
-  "productos; fuentes que respondieron:", broad.sources.join(", "));
+  "productos; diagnóstico por fuente:", JSON.stringify(broad.sourceStats || broad.sources));
 
 const checks = [
   {
