@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v14';
+  const SEARCH_CACHE_KEY='racion-search-cache-v15';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -135,9 +135,9 @@
     return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
-    // Supercor uses the ECI online catalogue as a clearly labelled fallback only;
-    // it does not assert stock in a particular Supercor store.
-    if(retailer.key==='supercor'&&product.storeKey==='elcorteingles')return true;
+    // AESAN is historical 2022 market data, not a current retailer catalogue.
+    if(['elcorteingles','hipercor','supercor'].includes(retailer.key)&&
+       /aesan/i.test(String(product.source||'')))return false;
     if(product.storeKey===retailer.key)return true;
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
     return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
@@ -343,8 +343,8 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc',elcorteingles:'Supermercado El Corte Inglés',hipercor:'Supermercado Hipercor',supercor:'Supercor'}[p.source]||'Catálogo compartido de Ración'),
-        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc','elcorteingles','hipercor','supercor'].includes(p.source)?p.source:'',
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc'}[p.source]||'Catálogo compartido de Ración'),
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc'].includes(p.source)?p.source:'',
         storePrice:numOrNull(p.store_price),
         packageSize:p.package_size||'',
         confidence:'external',
@@ -470,6 +470,35 @@
     wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
+  function officialRetailerInfo(retailer){
+    if(!retailer)return null;
+    const links={
+      elcorteingles:{
+        url:'https://www.elcorteingles.es/supermercado/',
+        label:'Abrir supermercado de El Corte Inglés',
+        note:'El catálogo actual de esta tienda no está conectado a Ración. Los resultados que puedas ver proceden de fuentes externas y no confirman su surtido ni stock.'
+      },
+      hipercor:{
+        url:'https://www.hipercor.es/supermercado/',
+        label:'Abrir supermercado Hipercor',
+        note:'El catálogo actual de Hipercor no está conectado a Ración. Las fuentes externas no confirman su surtido ni stock.'
+      },
+      supercor:{
+        url:'https://www.supercor.es/catalogos-digitales/',
+        label:'Abrir catálogos oficiales de Supercor',
+        note:'Supercor no dispone de un catálogo SKU público conectado a Ración. El enlace muestra sus catálogos de ofertas, no el inventario de una tienda concreta.'
+      }
+    };
+    return links[retailer.key]||null;
+  }
+  function retailerCatalogNote(retailer){
+    const info=officialRetailerInfo(retailer);
+    if(!info)return null;
+    const note=document.createElement('div');
+    note.className='search-placeholder retailer-catalog-note';
+    note.innerHTML='<p>'+esc(info.note)+'</p><p><a href="'+esc(info.url)+'" target="_blank" rel="noopener noreferrer">'+esc(info.label)+'</a></p>';
+    return note;
+  }
   async function resolveDrafts(){
     $('draftList').innerHTML='';for(const d of pendingDrafts){if(d.status==='matched' || d.status==='selected')continue;if(d.status==='quantity-needed'||d.status==='unit-mismatch')continue;
       d.busy=true;
@@ -551,8 +580,12 @@
             ?'No encontramos productos relevantes de '+esc(retailer.key)+' para «'+esc(q)+'». No mostraremos productos de otras marcas ni alimentos que solo mencionen yogur como ingrediente. Prueba con otro nombre o introduce los datos de la etiqueta.'
             :'No encontramos una coincidencia relevante para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.';
         out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>'+msg+'</p></div>';
+        const officialNote=retailerCatalogNote(retailer);
+        if(officialNote)out.appendChild(officialNote);
         return;
       }
+      const officialNote=retailerCatalogNote(retailer);
+      if(officialNote)out.appendChild(officialNote);
       all.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
     }catch(err){
       out.innerHTML='';

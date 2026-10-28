@@ -199,10 +199,7 @@ const addedStores = [
   {query:"Poma Bonpreu", key:"bonpreu", label:"Bonpreu i Esclat"},
   {query:"Yogur Ametller", key:"ametller", label:"Ametller Origen"},
   {query:"Leche Alcampo", key:"alcampo", label:"Alcampo"},
-  {query:"Leche Makro", key:"makro", label:"Makro España"},
-  {query:"Yogur El Corte Inglés", key:"elcorteingles", label:"Supermercado El Corte Inglés"},
-  {query:"Yogur Hipercor", key:"hipercor", label:"Supermercado Hipercor"},
-  {query:"Yogur Supercor", key:"supercor", label:"Catálogo online ECI; stock Supercor no verificado"}
+  {query:"Leche Makro", key:"makro", label:"Makro España"}
 ];
 for (const check of addedStores) {
   const data = await search(check.query);
@@ -222,6 +219,24 @@ for (const check of addedStores) {
   }
   console.log("OK cadena nueva", check.label, "→", direct.length,
     "productos propios; fuentes:", JSON.stringify(data.sourceStats));
+}
+
+for (const check of [
+  {query:"Yogur El Corte Inglés",key:"elcorteingles"},
+  {query:"Yogur Hipercor",key:"hipercor"},
+  {query:"Yogur Supercor",key:"supercor"}
+]) {
+  const data=await search(check.query);
+  const falselyTagged=data.products.filter(product=>
+    ["elcorteingles","hipercor","supercor"].includes(String(product.source||"")) ||
+    ["elcorteingles","hipercor","supercor"].includes(String(product.storeKey||"")) ||
+    /AESAN \(2022\)/i.test(String(product.source||""))
+  );
+  if(falselyTagged.length) {
+    throw new Error(check.query+" mezcló catálogo no autorizado o datos históricos como surtido actual: "+
+      JSON.stringify(falselyTagged.slice(0,3)));
+  }
+  console.log("OK fallback honesto para",check.key,"→ fuentes:",JSON.stringify(data.sourceStats||data.sources));
 }
 
 const checks = [

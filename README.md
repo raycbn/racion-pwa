@@ -42,13 +42,15 @@ Proyecto: `racion-food-catalog`.
 No se copian claves de servicio de Supabase al frontend. La aplicación usa únicamente una clave publicable y las escrituras privilegiadas se realizan en servidor.
 
 
-## Catálogo actual: El Corte Inglés, Hipercor y Supercor
+## El Corte Inglés, Hipercor y Supercor
 
-Ración consulta bajo demanda las páginas públicas de categorías de **Supermercado El Corte Inglés** y **Supermercado Hipercor** (por ejemplo, lácteos, frescos y bebidas) y puede leer el precio y formato que publica la ficha, además de las calorías y macronutrientes por 100 g cuando la ficha ofrece esa tabla. Los productos se guardan en el catálogo interno por fuente y se marcan con la última actualización; no se utiliza la API privada de búsqueda del grupo.
+**No hay una integración directa de sus catálogos en Ración todavía.** Las páginas de ECI e Hipercor pueden verse en un navegador, pero las peticiones desde Supabase devuelven HTTP 403. Además, las condiciones oficiales de El Corte Inglés restringen la extracción automatizada y la creación de listas de productos/precios sin autorización previa. Por eso se ha desactivado el scraper en lugar de intentar sortear el bloqueo ([condiciones oficiales del grupo](https://www.elcorteingles.es/empresas/condiciones-de-uso/)).
 
-**Supercor** no publica en su web pública un catálogo consultable por SKU con la misma estructura. Una búsqueda escrita como «Yogur Supercor» utiliza como alternativa el catálogo online actual de El Corte Inglés, y la app lo indica en los resultados: no confirma que ese producto esté disponible en una tienda Supercor concreta. No se eluden bloqueos ni se copian catálogos completos de esa web.
+En esas búsquedas, Ración consulta fuentes con licencia y por código de barras cuando están disponibles. No etiqueta un resultado de Open Food Facts como inventario de ECI/Hipercor ni usa AESAN (2022) como si fuera su catálogo actual. La app ofrece un enlace al catálogo oficial si no encuentra una coincidencia verificable.
 
-Los datos de ECI/Hipercor son los que publica la web al buscar, no un inventario completo ni una confirmación de stock local. Los precios son los del catálogo online consultado y pueden cambiar por código postal, tienda y fecha. AESAN sigue siendo una fuente nutricional histórica de 2022, no un catálogo de productos de 2026.
+**Supercor:** el sitio público ofrece catálogos de ofertas, no una base SKU pública consultable desde Ración. La app enlaza a sus catálogos, sin afirmar disponibilidad local.
+
+Para una búsqueda completa y actualizada de 2026 necesitamos que El Corte Inglés facilite un feed/API/CSV autorizado o una autorización escrita para reutilizar el catálogo. Con ese acceso sí se puede construir un índice propio con producto, EAN, formato, precio/fecha y datos nutricionales separados por fuente.
 
 ## Calidad de datos y límites
 
