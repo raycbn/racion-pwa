@@ -1,0 +1,19 @@
+{
+  "name": "Ración · Diario nutricional",
+  "short_name": "Ración",
+  "description": "Registro de calorías con datos nutricionales verificables",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f8f5",
+  "theme_color": "#20543f",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
