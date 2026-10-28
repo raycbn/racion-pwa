@@ -160,9 +160,9 @@ console.log("Diagnóstico de nutrientes por código de barras:", enriched.length
   "productos enlazados a una fuente nutricional.");
 
 const commonFoods = [
-  {query:"huevos", pattern:/egg|huevo/i},
-  {query:"arroz", pattern:/rice|arroz/i},
-  {query:"aceite de oliva", pattern:/olive|oliva|aceite.*oil/i}
+  {query:"huevos", pattern:/egg|huevo|ous/i},
+  {query:"arroz", pattern:/rice|arroz|arros/i},
+  {query:"aceite de oliva", pattern:/olive|oliva|aceite.*oil|oli/i}
 ];
 for (const check of commonFoods) {
   const data = await search(check.query);
