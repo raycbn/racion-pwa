@@ -197,7 +197,10 @@ const addedStores = [
   {query:"Poma Bonpreu", key:"bonpreu", label:"Bonpreu i Esclat"},
   {query:"Yogur Ametller", key:"ametller", label:"Ametller Origen"},
   {query:"Leche Alcampo", key:"alcampo", label:"Alcampo"},
-  {query:"Leche Makro", key:"makro", label:"Makro España"}
+  {query:"Leche Makro", key:"makro", label:"Makro España"},
+  {query:"Yogur El Corte Inglés", key:"elcorteingles", label:"Supermercado El Corte Inglés"},
+  {query:"Yogur Hipercor", key:"hipercor", label:"Supermercado Hipercor"},
+  {query:"Yogur Supercor", key:"supercor", label:"Catálogo online ECI; stock Supercor no verificado"}
 ];
 for (const check of addedStores) {
   const data = await search(check.query);
@@ -206,10 +209,14 @@ for (const check of addedStores) {
     throw new Error(check.label + " no aparece en el diagnóstico: " +
       JSON.stringify(data.sourceStats || data.sources));
   }
-  const direct = data.products.filter(product => product.source === check.key);
+  const expectedSource = check.key === "supercor" ? "elcorteingles" : check.key;
+  const direct = data.products.filter(product => product.source === expectedSource);
   if (stat.status === "error" || stat.products === 0 || direct.length === 0) {
-    throw new Error(check.label + " no devolvió productos del catálogo propio: " +
+    throw new Error(check.label + " no devolvió productos del catálogo esperado: " +
       JSON.stringify({stat, sourceStats:data.sourceStats, products:data.products.slice(0,3)}));
+  }
+  if (check.key === "supercor" && !String(stat.source).includes("no verificado")) {
+    throw new Error("La búsqueda Supercor debe advertir que el stock en tienda no está verificado.");
   }
   console.log("OK cadena nueva", check.label, "→", direct.length,
     "productos propios; fuentes:", JSON.stringify(data.sourceStats));

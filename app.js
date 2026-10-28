@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v13';
+  const SEARCH_CACHE_KEY='racion-search-cache-v14';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -111,7 +111,9 @@
     {key:'alcampo',aliases:['alcampo','auchan']},
     {key:'consum',aliases:['consum']},
     {key:'ahorramas',aliases:['ahorramas']},
-    {key:'el corte ingles',aliases:['el corte ingles','corte ingles','hipercor']},
+    {key:'elcorteingles',aliases:['el corte ingles','corte ingles','elcorteingles','eci']},
+    {key:'hipercor',aliases:['hipercor']},
+    {key:'supercor',aliases:['supercor']},
     {key:'gadis',aliases:['gadis']},
     {key:'masymas',aliases:['masymas','mas y mas']},
     {key:'ametller',aliases:['ametller','ametller origen']},
@@ -133,7 +135,9 @@
     return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
-    // The Edge Function tags products from a store's own catalog even when its name omits the store.
+    // Supercor uses the ECI online catalogue as a clearly labelled fallback only;
+    // it does not assert stock in a particular Supercor store.
+    if(retailer.key==='supercor'&&product.storeKey==='elcorteingles')return true;
     if(product.storeKey===retailer.key)return true;
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
     return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
@@ -339,8 +343,10 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc'}[p.source]||'Catálogo compartido de Ración'),
-        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc'].includes(p.source)?p.source:'',
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc',elcorteingles:'Supermercado El Corte Inglés',hipercor:'Supermercado Hipercor',supercor:'Supercor'}[p.source]||'Catálogo compartido de Ración'),
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc','elcorteingles','hipercor','supercor'].includes(p.source)?p.source:'',
+        storePrice:numOrNull(p.store_price),
+        packageSize:p.package_size||'',
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
         ingredients:p.ingredients||'',
@@ -460,7 +466,8 @@
     const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
     const nutritionLabel=p.nutritionSource&&p.nutritionSource!==p.source?' · nutrientes: '+p.nutritionSource:'';
     const sourceLabel=(p.source||'Fuente no indicada')+nutritionLabel;
-    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
+    const retailMeta=[p.packageSize||'',p.storePrice!==null&&p.storePrice!==undefined?Number(p.storePrice).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' € online':''].filter(Boolean).join(' · ');
+    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
   async function resolveDrafts(){
