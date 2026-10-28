@@ -1,0 +1,21 @@
+name: Smoke-test supermarket catalog
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app.js"
+      - "scripts/smoke-search.mjs"
+      - ".github/workflows/catalog-smoke.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate frontend syntax
+        run: node --check app.js
+      - name: Test live supermarket search and relevance
+        run: node scripts/smoke-search.mjs

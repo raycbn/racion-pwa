@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v7';
+  const SEARCH_CACHE_KEY='racion-search-cache-v8';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -112,6 +112,9 @@
     {key:'ahorramas',aliases:['ahorramas']},
     {key:'el corte ingles',aliases:['el corte ingles','corte ingles','hipercor']},
     {key:'gadis',aliases:['gadis']},
+    {key:'masymas',aliases:['masymas','mas y mas']},
+    {key:'ametller',aliases:['ametller','ametller origen']},
+    {key:'makro',aliases:['makro']},
     {key:'bonpreu',aliases:['bonpreu','esclat']}
   ];
   function retailerIntentForSearch(term){
@@ -126,7 +129,8 @@
     return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
-    if(product.storeKey===retailer.key && retailer.matched===retailer.key)return true;
+    // The Edge Function tags products from a store's own catalog even when its name omits the store.
+    if(product.storeKey===retailer.key)return true;
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
     return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
   }
@@ -254,7 +258,7 @@
   const SUPABASE_URL='https://xegxzmicbxbqjelkvhlx.supabase.co';
   const SUPABASE_PUBLIC_KEY='sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd';
   async function searchSharedCatalog(term){
-    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),7000);
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),12000);
     try{
       const response=await fetch(SUPABASE_URL+'/functions/v1/food-search',{
         method:'POST',
@@ -275,8 +279,8 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat'}[p.source]||'Catálogo compartido de Ración'),
-        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu'].includes(p.source)?p.source:'',
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España'}[p.source]||'Catálogo compartido de Ración'),
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro'].includes(p.source)?p.source:'',
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
         ingredients:p.ingredients||'',
