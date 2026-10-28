@@ -166,7 +166,7 @@ const commonFoods = [
 ];
 for (const check of commonFoods) {
   const data = await search(check.query);
-  const wrong = data.products.filter(product => !check.pattern.test(product.name));
+  const wrong = data.products.filter(product => !check.pattern.test(normalize(product.name)));
   if (wrong.length) {
     throw new Error(check.query + " devolvió productos no relacionados: " +
       wrong.map(p => p.name).join("; "));
