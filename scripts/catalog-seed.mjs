@@ -2,7 +2,9 @@ const endpoint = "https://xegxzmicbxbqjelkvhlx.supabase.co/functions/v1/food-sea
 const publishableKey = "sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd";
 
 const terms = [
-  "leche", "huevos", "arroz", "pasta", "pollo",
+  "leche",
+  "yogur",
+  "leche sin lactosa", "huevos", "arroz", "pasta", "pollo",
   "pan", "aceite de oliva", "queso", "tomate", "manzana"
 ];
 

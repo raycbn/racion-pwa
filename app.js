@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v9';
+  const SEARCH_CACHE_KEY='racion-search-cache-v10';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -115,7 +115,10 @@
     {key:'masymas',aliases:['masymas','mas y mas']},
     {key:'ametller',aliases:['ametller','ametller origen']},
     {key:'makro',aliases:['makro']},
-    {key:'bonpreu',aliases:['bonpreu','esclat']}
+    {key:'bonpreu',aliases:['bonpreu','esclat']},
+    {key:'condis',aliases:['condis']},
+    {key:'bonarea',aliases:['bonarea','bonàrea']},
+    {key:'plusfresc',aliases:['plusfresc','plus fresc']}
   ];
   function retailerIntentForSearch(term){
     const n=' '+normalize(term)+' ';
@@ -279,8 +282,8 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España'}[p.source]||'Catálogo compartido de Ración'),
-        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro'].includes(p.source)?p.source:'',
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc'}[p.source]||'Catálogo compartido de Ración'),
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc'].includes(p.source)?p.source:'',
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
         ingredients:p.ingredients||'',
