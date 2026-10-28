@@ -61,6 +61,30 @@ if (broad.products.length === 0) {
 console.log("OK búsqueda federada de yogur →", broad.products.length,
   "productos; diagnóstico por fuente:", JSON.stringify(broad.sourceStats || broad.sources));
 
+const enriched = broad.products.filter(product => product.nutrition_source);
+console.log("Diagnóstico de nutrientes por código de barras:", enriched.length,
+  "productos enlazados a una fuente nutricional.");
+
+const commonFoods = [
+  {query:"huevos", pattern:/egg|huevo/i},
+  {query:"arroz", pattern:/rice|arroz/i},
+  {query:"aceite de oliva", pattern:/olive|oliva|aceite.*oil/i}
+];
+for (const check of commonFoods) {
+  const data = await search(check.query);
+  const wrong = data.products.filter(product => !check.pattern.test(product.name));
+  if (wrong.length) {
+    throw new Error(check.query + " devolvió productos no relacionados: " +
+      wrong.map(p => p.name).join("; "));
+  }
+  if (data.products.length === 0) {
+    throw new Error(check.query + " no devolvió productos; fuentes=" +
+      JSON.stringify(data.sourceStats || data.sources));
+  }
+  console.log("OK", check.query, "→", data.products.length, "productos");
+}
+
+
 const repeated = await search("Yogur");
 if (!Array.isArray(repeated.sourceStats) ||
     !repeated.sourceStats.every(stat => String(stat.status).startsWith("cached-"))) {
