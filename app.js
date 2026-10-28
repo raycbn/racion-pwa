@@ -86,10 +86,11 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v4';
+  const SEARCH_CACHE_KEY='racion-search-cache-v5';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
+  let lastSearchError='';
   let searchCache={};
   try{searchCache=JSON.parse(localStorage.getItem(SEARCH_CACHE_KEY)||'{}')||{};}catch{searchCache={};}
   const genericTranslations=[
@@ -109,7 +110,7 @@
     {key:'alcampo',aliases:['alcampo','auchan']},
     {key:'consum',aliases:['consum']},
     {key:'ahorramas',aliases:['ahorramas']},
-    {key:'el corte ingles',aliases:['el corte ingles','hipercor']},
+    {key:'el corte ingles',aliases:['el corte ingles','corte ingles','hipercor']},
     {key:'bonpreu',aliases:['bonpreu','esclat']}
   ];
   function retailerIntentForSearch(term){
@@ -126,6 +127,28 @@
   function productMatchesRetailer(product,retailer){
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
     return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
+  }
+  function productMatchesSearch(product,term,retailer=retailerIntentForSearch(term)){
+    if(retailer&&!productMatchesRetailer(product,retailer))return false;
+    const base=retailer?stripRetailerFromSearch(term,retailer):term;
+    const query=normalize(fdcQueryFor(base));
+    const tokens=query.split(' ').filter(t=>t.length>1&&!['de','del','la','el','las','los','con','para','por','en','un','una','unos','unas','y','the','and','with','fresh'].includes(t));
+    if(!tokens.length)return true;
+    const name=normalize(String(product.name||''));
+    const yogurt=['yogur','yogurt','yoghurt','yoghourt'];
+    const askedYogurt=tokens.some(t=>yogurt.includes(t));
+    if(askedYogurt&&!/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(name))return false;
+    const synonyms={
+      greek:['greek','griego','griega'],plain:['plain','natural'],strawberry:['strawberry','strawberries','fresa','fresas'],
+      coconut:['coconut','coco'],vanilla:['vanilla','vainilla'],skim:['skim','desnatada','desnatado'],
+      milk:['milk','leche'],chicken:['chicken','pollo'],turkey:['turkey','pavo'],beef:['beef','ternera','vacuno'],
+      apple:['apple','manzana'],banana:['banana','platano'],cheese:['cheese','queso']
+    };
+    return tokens.every(token=>{
+      if(yogurt.includes(token))return /^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(name);
+      const alternatives=synonyms[token]||[token];
+      return alternatives.some(word=>name.split(' ').includes(word));
+    });
   }
   function fdcQueryFor(term){
     const q=' '+normalize(term)+' ';
@@ -243,25 +266,26 @@
         ingredients:p.ingredients||'',
         sourceLicense:p.source_license||''
       })).filter(isUsableProduct);
-      return {products,sources:Array.isArray(data.sources)?data.sources:[],cached:Boolean(data.cached)};
+      return {products,sources:Array.isArray(data.sources)?data.sources:[],cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
     }finally{clearTimeout(timer);}
   }
   async function offSearch(term){
     const clean=String(term||'').trim();
     if(!clean)return [];
+    lastSearchError='';
     const key=normalize(clean);
     const retailer=retailerIntentForSearch(clean);
     const cached=searchCache[key];
     if(cached&&Date.now()-cached.savedAt<SEARCH_CACHE_TTL&&Array.isArray(cached.products)){
-      const products=retailer?cached.products.filter(p=>productMatchesRetailer(p,retailer)):cached.products;
+      const products=cached.products.filter(p=>productMatchesSearch(p,clean,retailer));
       if(products.length){lastSearchSources=['Caché local'];return products;}
-      // Don't reuse an old fuzzy result for a retailer-specific query.
+      // Discard old or irrelevant cached results for this query.
     }
-    const localAll=state.products.filter(p=>normalize(p.name+' '+(p.brand||'')).includes(key)||normalize(p.name)===key);
-    const local=retailer?localAll.filter(p=>productMatchesRetailer(p,retailer)).slice(0,8):localAll.slice(0,8);
+    const localAll=state.products.filter(p=>productMatchesSearch(p,clean,retailer));
+    const local=localAll.slice(0,8);
     try{
       const shared=await searchSharedCatalog(clean);
-      const sharedProducts=retailer?shared.products.filter(p=>productMatchesRetailer(p,retailer)):shared.products;
+      const sharedProducts=shared.products.filter(p=>productMatchesSearch(p,clean,retailer));
       if(sharedProducts.length){
         const merged=mergeProducts(local,sharedProducts);
         rememberSearch(clean,merged,shared.sources.length?shared.sources:['Catálogo compartido de Ración']);
@@ -269,8 +293,11 @@
         return merged.slice(0,12);
       }
       lastSearchSources=shared.sources;
-      if(shared.cached)return local;
-      if(shared.sources.length)return local;
+      if(shared.failed||shared.unavailable){
+        lastSearchError='El catálogo compartido o las fuentes externas no respondieron. No se han mostrado productos de otras marcas. Prueba otra vez en unos minutos.';
+        return local;
+      }
+      if(shared.searched)return local;
     }catch(error){console.warn('Catálogo compartido de Ración no disponible; se consultan fuentes externas',error);}
     if(retailer){
       const base=stripRetailerFromSearch(clean,retailer);
@@ -280,13 +307,16 @@
       const checks=await Promise.allSettled(terms.map(searchOpenFoodFacts));
       const found=[],errors=[];
       checks.forEach(result=>{
-        if(result.status==='fulfilled')found.push(result.value.filter(p=>productMatchesRetailer(p,retailer)));
+        if(result.status==='fulfilled')found.push(result.value.filter(p=>productMatchesSearch(p,clean,retailer)));
         else{errors.push(result.reason?.message||'fallo de conexión');console.warn('Búsqueda de producto de supermercado fallida',result.reason);}
       });
-      const merged=mergeProducts(local,...found);
+      const merged=mergeProducts(local,...found).filter(p=>productMatchesSearch(p,clean,retailer));
       lastSearchSources=checks.some(r=>r.status==='fulfilled')?['Open Food Facts']:[];
       if(merged.length){rememberSearch(clean,merged,lastSearchSources);return merged.slice(0,12);}
-      if(errors.length===checks.length)throw new Error('No responde el catálogo de productos de supermercado. Prueba de nuevo o introduce los valores de la etiqueta.');
+      if(errors.length===checks.length){
+        lastSearchError='El catálogo de productos de supermercados no respondió. Prueba de nuevo en unos minutos; no se han usado productos de otras marcas.';
+        return [];
+      }
       return [];
     }
     const checks=await Promise.allSettled([searchOpenFoodFacts(clean),searchFoodDataCentral(clean)]);
@@ -296,10 +326,10 @@
       if(result.status==='fulfilled'){sources.push(names[i]);if(result.value.length)found.push(result.value);}
       else{errors.push(names[i]+': '+(result.reason?.message||'fallo de conexión'));console.warn('Fallo de fuente de alimentos '+names[i],result.reason);}
     });
-    const merged=mergeProducts(local,...found);
+    const merged=mergeProducts(local,...found).filter(p=>productMatchesSearch(p,clean,null));
     if(merged.length){rememberSearch(clean,merged,sources);return merged.slice(0,12);}
     lastSearchSources=sources;
-    if(errors.length===checks.length)throw new Error('El catálogo compartido y los dos catálogos externos no han respondido. '+errors.join(' · '));
+    if(errors.length===checks.length)lastSearchError='Los catálogos de alimentos no respondieron. Comprueba la conexión o vuelve a intentarlo.';
     return [];
   }
   async function offBarcode(code){
@@ -387,19 +417,21 @@
     if(!q)return;
     const out=$('searchResults'),status=$('searchSourceStatus');
     const retailer=retailerIntentForSearch(q);
-    const matchesQueryScope=p=>!retailer||productMatchesRetailer(p,retailer);
+    const matchesQueryScope=p=>productMatchesSearch(p,q,retailer);
     out.innerHTML='<div class="search-placeholder"><span>◌</span><p>Buscando en el catálogo compartido y las fuentes disponibles…</p></div>';
     if(status)status.textContent='Consultando el catálogo de Ración y las fuentes externas.';
-    const local=state.products.filter(p=>normalize((p.brand||'')+' '+p.name).includes(normalize(q))&&matchesQueryScope(p)).slice(0,8);
+    const local=state.products.filter(matchesQueryScope).slice(0,8);
     try{
       const remote=await offSearch(q);
       const all=mergeProducts(local,remote.filter(matchesQueryScope)).slice(0,12);
       out.innerHTML='';
       if(status)status.textContent='Fuentes: '+(lastSearchSources.length?lastSearchSources.join(' · '):'sin coincidencias')+'. Se guardan localmente solo los resultados válidos.';
       if(!all.length){
-        const msg=retailer
-          ?'No encontramos productos de '+esc(retailer.key)+' para «'+esc(q)+'». No mostraremos productos de otras marcas. Prueba «'+esc(stripRetailerFromSearch(q,retailer))+' '+esc(retailer.aliases[1]||retailer.key)+'» o introduce los datos de la etiqueta.'
-          :'No encontramos una coincidencia para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.';
+        const msg=lastSearchError
+          ?esc(lastSearchError)
+          :retailer
+            ?'No encontramos productos relevantes de '+esc(retailer.key)+' para «'+esc(q)+'». No mostraremos productos de otras marcas ni alimentos que solo mencionen yogur como ingrediente. Prueba con otro nombre o introduce los datos de la etiqueta.'
+            :'No encontramos una coincidencia relevante para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.';
         out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>'+msg+'</p></div>';
         return;
       }
