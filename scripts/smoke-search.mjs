@@ -15,7 +15,7 @@ if (!appSource.includes("feed autorizado") ||
     appSource.includes("Ración incluye una muestra de fichas públicas de El Corte Inglés")) {
   throw new Error("El texto ECI/Hipercor no refleja que hace falta un feed o permiso autorizado");
 }
-if (!appSource.includes("racion-search-cache-v19")) {
+if (!appSource.includes("racion-search-cache-v20")) {
   throw new Error("La caché local no se ha invalidado tras retirar las muestras antiguas");
 }
 const mergeStart = appSource.indexOf("  function productNutritionScore(");
