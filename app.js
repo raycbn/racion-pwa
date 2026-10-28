@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v10';
+  const SEARCH_CACHE_KEY='racion-search-cache-v11';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -229,15 +229,61 @@
     const data=await getJson('https://api.nal.usda.gov/fdc/v1/foods/search?'+params.toString(),4500);
     return (data.foods||[]).map(makeFdcProduct).filter(isUsableProduct);
   }
+  function productNutritionScore(product){
+    return ['kcal','protein','carbs','fat'].reduce((score,key)=>{
+      const value=product?.[key];
+      return score+(value!==null&&value!==undefined&&Number.isFinite(Number(value))?1:0);
+    },0)+(product?.nutritionSource?2:0)+(product?.nutrition_source?2:0);
+  }
   function mergeProducts(...groups){
-    const seen=new Set(),out=[];
-    for(const group of groups)for(const p of (group||[])){
-      const barcode=String(p.barcode||'').replace(/\D/g,'');
-      const key=barcode?'barcode:'+barcode:'name:'+normalize(p.brand+' '+p.name);
-      if(!p.name||seen.has(key))continue;
-      seen.add(key);out.push(p);
+    const byKey=new Map(), order=[];
+    const nutrientKeys=['kcal','protein','carbs','fat'];
+    for(const group of groups)for(const raw of (group||[])){
+      if(!raw||!raw.name)continue;
+      const barcode=String(raw.barcode||'').replace(/\D/g,'');
+      const key=barcode?'barcode:'+barcode:'name:'+normalize(String(raw.brand||'')+' '+String(raw.name||''));
+      const current=byKey.get(key);
+      if(!current){
+        byKey.set(key,{...raw});
+        order.push(key);
+        continue;
+      }
+      const oldScore=productNutritionScore(current),newScore=productNutritionScore(raw);
+      const primary=newScore>oldScore?raw:current;
+      const secondary=primary===raw?current:raw;
+      const merged={...secondary,...primary};
+      // Never overwrite a known nutrient with null just because another source came later.
+      for(const nutrient of nutrientKeys){
+        if(merged[nutrient]===null||merged[nutrient]===undefined){
+          const fallback=secondary[nutrient];
+          if(fallback!==null&&fallback!==undefined&&Number.isFinite(Number(fallback)))merged[nutrient]=Number(fallback);
+        }
+      }
+      // A store catalog is best for product identity; a nutrition database is best for
+      // missing label values. Keep the retailer provenance while showing nutrition provenance separately.
+      const storeItem=[current,raw].find(p=>p.storeKey);
+      if(storeItem){
+        merged.storeKey=storeItem.storeKey;
+        merged.source=storeItem.source||merged.source;
+        merged.name=storeItem.name||merged.name;
+        merged.brand=storeItem.brand||merged.brand;
+        merged.image=storeItem.image||merged.image;
+        merged.barcode=storeItem.barcode||merged.barcode;
+      }
+      const nutrientProvider=[current,raw]
+        .filter(p=>nutrientKeys.some(k=>p[k]!==null&&p[k]!==undefined&&Number.isFinite(Number(p[k]))))
+        .sort((a,b)=>productNutritionScore(b)-productNutritionScore(a))[0];
+      if(nutrientProvider){
+        merged.nutritionSource=nutrientProvider.nutritionSource||nutrientProvider.nutrition_source||
+          (storeItem&&nutrientProvider.source!==storeItem.source?nutrientProvider.source:'');
+        merged.nutritionSourceUrl=nutrientProvider.nutritionSourceUrl||nutrientProvider.nutrition_source_url||merged.nutritionSourceUrl||'';
+        merged.nutritionSourceLicense=nutrientProvider.nutritionSourceLicense||nutrientProvider.nutrition_source_license||merged.nutritionSourceLicense||'';
+      }
+      if(!merged.ingredients)merged.ingredients=secondary.ingredients||'';
+      if(!merged.image)merged.image=secondary.image||'';
+      byKey.set(key,merged);
     }
-    return out;
+    return order.map(key=>byKey.get(key)).filter(Boolean);
   }
   function rememberSearch(term, products, sources){
     lastSearchSources=sources.slice();

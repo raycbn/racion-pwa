@@ -1,3 +1,41 @@
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
+
+const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+const mergeStart = appSource.indexOf("  function productNutritionScore(");
+const mergeEnd = appSource.indexOf("  function rememberSearch", mergeStart);
+if (mergeStart < 0 || mergeEnd < 0) throw new Error("mergeProducts helper not found");
+const mergeContext = {
+  normalize: value => String(value ?? "").normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "").toLowerCase().trim().replace(/\s+/g, " ")
+};
+runInNewContext(appSource.slice(mergeStart, mergeEnd) +
+  "\nglobalThis.__mergeProducts = mergeProducts;", mergeContext);
+const mergeProductsTest = mergeContext.__mergeProducts;
+const storeProduct = {
+  name:"Yogur natural Hacendado", brand:"Hacendado", source:"Mercadona",
+  storeKey:"mercadona", barcode:"8410000000012",
+  kcal:null, protein:null, carbs:null, fat:null
+};
+const nutrientProduct = {
+  name:"Yogur natural Hacendado", brand:"Hacendado", source:"Open Food Facts",
+  barcode:"8410000000012", kcal:61, protein:3.8, carbs:5, fat:3.1,
+  sourceLicense:"ODbL-1.0"
+};
+const mergedTest = mergeProductsTest([storeProduct], [nutrientProduct]);
+if (mergedTest.length !== 1) throw new Error("The same barcode must produce one result card");
+if (mergedTest[0].storeKey !== "mercadona" || mergedTest[0].source !== "Mercadona") {
+  throw new Error("Nutrition merging must preserve retailer provenance");
+}
+if (mergedTest[0].kcal !== 61 || mergedTest[0].protein !== 3.8 ||
+    mergedTest[0].carbs !== 5 || mergedTest[0].fat !== 3.1) {
+  throw new Error("Nutrition merging discarded known nutrient values");
+}
+if (mergedTest[0].nutritionSource !== "Open Food Facts") {
+  throw new Error("Nutrition source was not recorded after merging");
+}
+console.log("OK deduplicación por código de barras → conserva tienda y nutrientes ODbL");
+
 const endpoint = "https://xegxzmicbxbqjelkvhlx.supabase.co/functions/v1/food-search";
 const publishableKey = "sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd";
 
