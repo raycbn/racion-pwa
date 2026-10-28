@@ -123,18 +123,14 @@ if (!aesanStat || !String(aesanStat.status).startsWith("cached-") || Number(aesa
   throw new Error("AESAN 2022 no está integrado en el diagnóstico de búsqueda: " +
     JSON.stringify(aesanStat || broad.sourceStats));
 }
-const aesanVisible = broad.products.filter(product => product.source === "aesan");
-if (!aesanVisible.length) {
-  throw new Error("La búsqueda general no muestra ningún producto del catálogo AESAN: " +
-    JSON.stringify(broad.products.slice(0, 5)));
-}
-console.log("OK catálogo AESAN 2022 →", aesanVisible.length,
-  "productos visibles; diagnóstico:", JSON.stringify(aesanStat));
+// Deduplication may display a retailer card instead of a duplicate AESAN row.
+console.log("OK catálogo AESAN 2022 →", aesanStat.products,
+  "coincidencias de catálogo; el EAN y el respaldo nutricional se prueban abajo.");
 
 const knownAesanBarcode = "8410500027766";
 const barcodeLookup = await search(knownAesanBarcode);
 const matchedAesanBarcode = barcodeLookup.products.find(product =>
-  product.source === "aesan" && String(product.barcode || "").replace(/\\D/g, "") === knownAesanBarcode
+  product.source === "aesan" && String(product.barcode || "").replace(/\D/g, "") === knownAesanBarcode
 );
 if (!matchedAesanBarcode || Number(matchedAesanBarcode.kcal) !== 31) {
   throw new Error("El EAN de prueba AESAN no devuelve las calorías esperadas: " +
@@ -142,6 +138,22 @@ if (!matchedAesanBarcode || Number(matchedAesanBarcode.kcal) !== 31) {
 }
 console.log("OK EAN AESAN", knownAesanBarcode, "→", matchedAesanBarcode.name,
   matchedAesanBarcode.kcal, "kcal/100", matchedAesanBarcode.unit);
+
+const matchedStoreBarcode = "8414807548313";
+const storeLookup = await search(matchedStoreBarcode);
+const enrichedStoreProduct = storeLookup.products.find(product =>
+  product.source === "consum" &&
+  String(product.barcode || "").replace(/\D/g, "") === matchedStoreBarcode
+);
+if (!enrichedStoreProduct ||
+    Number(enrichedStoreProduct.kcal) !== 20 ||
+    enrichedStoreProduct.nutrition_source !== "AESAN (2022)") {
+  throw new Error("El producto de Consum no obtuvo respaldo nutricional AESAN por EAN: " +
+    JSON.stringify({products:storeLookup.products,sourceStats:storeLookup.sourceStats}));
+}
+console.log("OK nutrición de tienda con respaldo AESAN →",
+  enrichedStoreProduct.name, enrichedStoreProduct.kcal, "kcal/100", enrichedStoreProduct.nutrition_source);
+
 
 const enriched = broad.products.filter(product => product.nutrition_source);
 console.log("Diagnóstico de nutrientes por código de barras:", enriched.length,
