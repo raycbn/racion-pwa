@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v15';
+  const SEARCH_CACHE_KEY='racion-search-cache-v16';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -343,14 +343,15 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc'}[p.source]||'Catálogo compartido de Ración'),
-        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc'].includes(p.source)?p.source:'',
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc',elcorteingles:'Supermercado El Corte Inglés',hipercor:'Supermercado Hipercor',supercor:'Supercor'}[p.source]||'Catálogo compartido de Ración'),
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc','elcorteingles','hipercor'].includes(p.source)?p.source:'',
         storePrice:numOrNull(p.store_price),
         packageSize:p.package_size||'',
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
         ingredients:p.ingredients||'',
         sourceLicense:p.source_license||'',
+        sourceUrl:p.source_url||'',
         nutritionSource:p.nutrition_source||'',
         nutritionSourceLicense:p.nutrition_source_license||'',
         nutritionSourceUrl:p.nutrition_source_url||''
@@ -466,8 +467,12 @@
     const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
     const nutritionLabel=p.nutritionSource&&p.nutritionSource!==p.source?' · nutrientes: '+p.nutritionSource:'';
     const sourceLabel=(p.source||'Fuente no indicada')+nutritionLabel;
-    const retailMeta=[p.packageSize||'',p.storePrice!==null&&p.storePrice!==undefined?Number(p.storePrice).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' € online':''].filter(Boolean).join(' · ');
-    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
+    const observedDate=p.updatedAt&&!Number.isNaN(new Date(p.updatedAt).getTime())?new Date(p.updatedAt).toLocaleDateString('es-ES'):'';
+    const priceText=p.storePrice!==null&&p.storePrice!==undefined?Number(p.storePrice).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'+(['elcorteingles','hipercor'].includes(p.storeKey)?' (web, observado '+(observedDate||'fecha no indicada')+')':' online'):'';
+    const retailMeta=[p.packageSize||'',priceText].filter(Boolean).join(' · ');
+    const sourceLink=['elcorteingles','hipercor'].includes(p.storeKey)&&/^https:\/\/(www\.)?(elcorteingles|hipercor)\.es\//i.test(p.sourceUrl||'')
+      ?'<a href="'+esc(p.sourceUrl)+'" target="_blank" rel="noopener noreferrer">Ver ficha oficial</a>':'';
+    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small>'+(sourceLink?'<div class="source-product-link">'+sourceLink+'</div>':'')+'<div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
   function officialRetailerInfo(retailer){
@@ -476,17 +481,17 @@
       elcorteingles:{
         url:'https://www.elcorteingles.es/supermercado/',
         label:'Abrir supermercado de El Corte Inglés',
-        note:'El catálogo actual de esta tienda no está conectado a Ración. Los resultados que puedas ver proceden de fuentes externas y no confirman su surtido ni stock.'
+        note:'Ración incluye una muestra de fichas públicas de El Corte Inglés consultadas el 28/10/2026, con EAN, etiqueta nutricional y precio cuando están disponibles. No es el catálogo completo ni un inventario en directo. El precio web puede variar por código postal, tienda y fecha.'
       },
       hipercor:{
         url:'https://www.hipercor.es/supermercado/',
         label:'Abrir supermercado Hipercor',
-        note:'El catálogo actual de Hipercor no está conectado a Ración. Las fuentes externas no confirman su surtido ni stock.'
+        note:'Ración incluye una muestra de fichas públicas de Hipercor consultadas el 28/10/2026. No es el catálogo completo ni un inventario en directo. El precio web puede variar por código postal, tienda y fecha.'
       },
       supercor:{
         url:'https://www.supercor.es/catalogos-digitales/',
         label:'Abrir catálogos oficiales de Supercor',
-        note:'Supercor no dispone de un catálogo SKU público conectado a Ración. El enlace muestra sus catálogos de ofertas, no el inventario de una tienda concreta.'
+        note:'Supercor no tiene un catálogo SKU público conectado a Ración. Si aparecen alternativas de El Corte Inglés, se identifican como productos de El Corte Inglés y no confirman stock en Supercor. El enlace muestra catálogos de ofertas, no el inventario de una tienda concreta.'
       }
     };
     return links[retailer.key]||null;

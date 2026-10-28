@@ -221,22 +221,29 @@ for (const check of addedStores) {
     "productos propios; fuentes:", JSON.stringify(data.sourceStats));
 }
 
-for (const check of [
-  {query:"Yogur El Corte Inglés",key:"elcorteingles"},
-  {query:"Yogur Hipercor",key:"hipercor"},
-  {query:"Yogur Supercor",key:"supercor"}
-]) {
+const eciChecks = [
+  {query:"Yogur El Corte Inglés",source:"elcorteingles",label:"Supermercado El Corte Inglés"},
+  {query:"Leche Hipercor",source:"hipercor",label:"Supermercado Hipercor"},
+  {query:"Yogur Supercor",source:"elcorteingles",label:"Catálogo ECI alternativo; stock Supercor no verificado",supercor:true}
+];
+for(const check of eciChecks) {
   const data=await search(check.query);
-  const falselyTagged=data.products.filter(product=>
-    ["elcorteingles","hipercor","supercor"].includes(String(product.source||"")) ||
-    ["elcorteingles","hipercor","supercor"].includes(String(product.storeKey||"")) ||
-    /AESAN \(2022\)/i.test(String(product.source||""))
-  );
-  if(falselyTagged.length) {
-    throw new Error(check.query+" mezcló catálogo no autorizado o datos históricos como surtido actual: "+
-      JSON.stringify(falselyTagged.slice(0,3)));
+  const direct=data.products.filter(product=>product.source===check.source);
+  if(!direct.length) {
+    throw new Error(check.label+" no devolvió fichas de la fuente esperada: "+
+      JSON.stringify({sources:data.sourceStats||data.sources,products:data.products.slice(0,3)}));
   }
-  console.log("OK fallback honesto para",check.key,"→ fuentes:",JSON.stringify(data.sourceStats||data.sources));
+  if(check.supercor) {
+    const fallbackStat=(data.sourceStats||[]).find(stat=>stat.source===check.label);
+    if(!fallbackStat || !String(fallbackStat.status).startsWith("cached-")) {
+      throw new Error("La alternativa de Supercor debe advertir que el stock no está verificado: "+
+        JSON.stringify(data.sourceStats||data.sources));
+    }
+    if(data.products.some(product=>product.source==="supercor"||product.storeKey==="supercor")) {
+      throw new Error("Una ficha ECI se etiquetó erróneamente como inventario Supercor.");
+    }
+  }
+  console.log("OK catálogo ECI/Hipercor",check.label,"→",direct.length,"fichas; fuentes:",JSON.stringify(data.sourceStats||data.sources));
 }
 
 const checks = [

@@ -44,13 +44,15 @@ No se copian claves de servicio de Supabase al frontend. La aplicación usa úni
 
 ## El Corte Inglés, Hipercor y Supercor
 
-**No hay una integración directa de sus catálogos en Ración todavía.** Las páginas de ECI e Hipercor pueden verse en un navegador, pero las peticiones desde Supabase devuelven HTTP 403. Además, las condiciones oficiales de El Corte Inglés restringen la extracción automatizada y la creación de listas de productos/precios sin autorización previa. Por eso se ha desactivado el scraper en lugar de intentar sortear el bloqueo ([condiciones oficiales del grupo](https://www.elcorteingles.es/empresas/condiciones-de-uso/)).
+Ración contiene una **muestra curada de 18 fichas de producto** de El Corte Inglés e Hipercor consultadas el 28 de octubre de 2026. Los registros incluyen identificador de la ficha oficial, enlace de origen, EAN, nutrientes, tamaño de envase y precio observado cuando esos campos están disponibles. La muestra cubre yogures de marca propia, leches, arroz y aceite; no equivale al catálogo completo.
 
-En esas búsquedas, Ración consulta fuentes con licencia y por código de barras cuando están disponibles. No etiqueta un resultado de Open Food Facts como inventario de ECI/Hipercor ni usa AESAN (2022) como si fuera su catálogo actual. La app ofrece un enlace al catálogo oficial si no encuentra una coincidencia verificable.
+**Límite verificado:** las fichas y categorías públicas se pueden consultar con un navegador, pero desde la Edge Function de Supabase las páginas de El Corte Inglés e Hipercor respondieron HTTP 403, incluidas las fichas individuales. No se elude ese bloqueo ni se llama a su API interna. Por eso esta muestra **no es el catálogo completo ni se actualiza sola desde la web del grupo**. Para una importación completa y recurrente necesitamos un feed oficial, una API documentada o permiso de acceso.
 
-**Supercor:** el sitio público ofrece catálogos de ofertas, no una base SKU pública consultable desde Ración. La app enlaza a sus catálogos, sin afirmar disponibilidad local.
+Los precios se guardan como **precio web observado el 28/10/2026**, no como precio garantizado en toda España: pueden variar por código postal, entrega, tienda y promoción. Las tarjetas muestran la fecha de observación y enlazan la ficha oficial de ECI/Hipercor.
 
-Para una búsqueda completa y actualizada de 2026 necesitamos que El Corte Inglés facilite un feed/API/CSV autorizado o una autorización escrita para reutilizar el catálogo. Con ese acceso sí se puede construir un índice propio con producto, EAN, formato, precio/fecha y datos nutricionales separados por fuente.
+**Supercor:** no hemos encontrado un catálogo SKU público accesible de forma permitida. Si una búsqueda «Yogur Supercor» muestra alternativas de ECI, se etiquetan como productos de El Corte Inglés y se advierte que no confirman el stock en Supercor. El enlace oficial de Supercor lleva a sus catálogos de ofertas, no a un inventario SKU.
+
+**AESAN 2022:** la tabla histórica contiene 29.113 fichas válidas de los productos comercializados en España en 2022, con 27.593 que incluyen calorías y 29.113 con EAN. Es una fuente de respaldo nutricional por código de barras, no una relación actual de productos disponibles en 2026.
 
 ## Calidad de datos y límites
 
