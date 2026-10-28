@@ -36,6 +36,8 @@ if (mergedTest[0].nutritionSource !== "Open Food Facts") {
 }
 console.log("OK deduplicación por código de barras → conserva tienda y nutrientes ODbL");
 
+console.log("Smoke catalog version: ECI + Hipercor public product pages, Supercor fallback explicitly labelled");
+
 const endpoint = "https://xegxzmicbxbqjelkvhlx.supabase.co/functions/v1/food-search";
 const publishableKey = "sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd";
 
