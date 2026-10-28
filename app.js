@@ -85,8 +85,8 @@
     return {id:'off-'+(raw.code||crypto.randomUUID()),name:raw.product_name_es||raw.product_name||raw.product_name_en||'Producto sin nombre',brand:raw.brands||'',unit:raw.product_quantity_unit==='ml'?'ml':'g',kcal,protein:numOrNull(n.proteins_100g),carbs:numOrNull(n.carbohydrates_100g),fat:numOrNull(n.fat_100g),image:raw.image_front_small_url||raw.image_front_url||'',barcode:raw.code||'',source,confidence:'external',updatedAt:new Date().toISOString(),ingredients:raw.ingredients_text_es||raw.ingredients_text||'',nutriscore:raw.nutriscore_grade||''};
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
-  function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v6';
+  function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
+  const SEARCH_CACHE_KEY='racion-search-cache-v7';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -111,6 +111,7 @@
     {key:'consum',aliases:['consum']},
     {key:'ahorramas',aliases:['ahorramas']},
     {key:'el corte ingles',aliases:['el corte ingles','corte ingles','hipercor']},
+    {key:'gadis',aliases:['gadis']},
     {key:'bonpreu',aliases:['bonpreu','esclat']}
   ];
   function retailerIntentForSearch(term){
@@ -125,13 +126,14 @@
     return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
+    if(product.storeKey===retailer.key && retailer.matched===retailer.key)return true;
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
     return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
   }
   function productMatchesSearch(product,term,retailer=retailerIntentForSearch(term)){
     if(retailer&&!productMatchesRetailer(product,retailer))return false;
     const base=retailer?stripRetailerFromSearch(term,retailer):term;
-    const query=normalize(fdcQueryFor(base));
+    const query=normalize(base);
     const tokens=query.split(' ').filter(t=>t.length>1&&!['de','del','la','el','las','los','con','para','por','en','un','una','unos','unas','y','the','and','with','fresh'].includes(t));
     if(!tokens.length)return true;
     const name=normalize(String(product.name||''));
@@ -139,10 +141,16 @@
     const askedYogurt=tokens.some(t=>yogurt.includes(t));
     if(askedYogurt&&!/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(name))return false;
     const synonyms={
-      greek:['greek','griego','griega'],plain:['plain','natural'],strawberry:['strawberry','strawberries','fresa','fresas'],
-      coconut:['coconut','coco'],vanilla:['vanilla','vainilla'],skim:['skim','desnatada','desnatado'],
-      milk:['milk','leche'],chicken:['chicken','pollo'],turkey:['turkey','pavo'],beef:['beef','ternera','vacuno'],
-      apple:['apple','manzana'],banana:['banana','platano'],cheese:['cheese','queso']
+      greek:['greek','griego','griega'],griego:['greek','griego','griega'],griega:['greek','griego','griega'],
+      plain:['plain','natural'],natural:['plain','natural'],
+      strawberry:['strawberry','strawberries','fresa','fresas'],fresa:['strawberry','strawberries','fresa','fresas'],fresas:['strawberry','strawberries','fresa','fresas'],
+      coconut:['coconut','coco'],coco:['coconut','coco'],vanilla:['vanilla','vainilla'],vainilla:['vanilla','vainilla'],
+      skim:['skim','desnatada','desnatado'],desnatada:['skim','desnatada','desnatado'],desnatado:['skim','desnatada','desnatado'],
+      milk:['milk','leche'],leche:['milk','leche'],chicken:['chicken','pollo'],pollo:['chicken','pollo'],
+      turkey:['turkey','pavo'],pavo:['turkey','pavo'],beef:['beef','ternera','vacuno'],ternera:['beef','ternera','vacuno'],
+      apple:['apple','manzana'],manzana:['apple','manzana'],banana:['banana','platano'],platano:['banana','platano'],
+      cheese:['cheese','queso'],queso:['cheese','queso'],rice:['rice','arroz'],arroz:['rice','arroz'],
+      oats:['oats','avena'],avena:['oats','avena'],tuna:['tuna','atun'],atun:['tuna','atun']
     };
     return tokens.every(token=>{
       if(yogurt.includes(token))return /^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(name);
@@ -267,7 +275,8 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:p.source==='openfoodfacts'?'Open Food Facts':p.source==='usda'?'USDA FoodData Central':'Catálogo compartido de Ración',
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat'}[p.source]||'Catálogo compartido de Ración'),
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu'].includes(p.source)?p.source:'',
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
         ingredients:p.ingredients||'',
