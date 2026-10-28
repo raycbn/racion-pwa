@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v8';
+  const SEARCH_CACHE_KEY='racion-search-cache-v9';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -284,7 +284,10 @@
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
         ingredients:p.ingredients||'',
-        sourceLicense:p.source_license||''
+        sourceLicense:p.source_license||'',
+        nutritionSource:p.nutrition_source||'',
+        nutritionSourceLicense:p.nutrition_source_license||'',
+        nutritionSourceUrl:p.nutrition_source_url||''
       })).filter(isUsableProduct);
       return {products,sources:Array.isArray(data.sources)?data.sources:[],cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
     }finally{clearTimeout(timer);}
@@ -388,7 +391,8 @@
     const img=p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<div class="result-fallback">◉</div>';
     const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]].filter(([,v])=>v!==null&&v!==undefined).map(([name,v])=>name+' '+fmt(v)+'g').join(' · ');
     const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
-    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(p.source||'Fuente no indicada')+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
+    const sourceLabel=(p.source||'Fuente no indicada')+(p.nutritionSource?' · nutrientes: '+p.nutritionSource:'');
+    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
   async function resolveDrafts(){
