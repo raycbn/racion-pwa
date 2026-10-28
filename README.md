@@ -24,7 +24,7 @@ Ración es una aplicación web instalable (PWA) para registrar comidas y calcula
 
 La función de búsqueda contiene adaptadores para **Mercadona, Consum, DIA, ALDI España, Lidl España, Condis, Bonàrea, Plusfresc, Gadis, Eroski, Alcampo, Masymas, Makro España, Ametller Origen y Bonpreu i Esclat**.
 
-La disponibilidad no es uniforme: depende de la tienda, la consulta y las respuestas de sus servicios en ese momento. En la última prueba automática, Mercadona, Consum, DIA, ALDI, Condis, Bonàrea, Plusfresc, Gadis, Masymas y Ametller Origen devolvieron coincidencias para «Yogur». Lidl respondió con HTTP 503 y Eroski con HTTP 403; Alcampo, Makro y Bonpreu no devolvieron coincidencias para esa consulta. Estos estados pueden cambiar. Ración no intenta eludir sistemas anti-bots ni considera una tienda plenamente integrada hasta verificar que devuelve productos reales.
+La disponibilidad no es uniforme: depende de la tienda, la consulta y las respuestas de sus servicios en ese momento. En la última prueba automática, las búsquedas específicas devolvieron productos propios de Mercadona, Consum, DIA, ALDI, Condis, Bonàrea, Plusfresc, Gadis, Alcampo, Masymas, Makro España, Ametller Origen y Bonpreu i Esclat. Lidl respondió con HTTP 503 y Eroski con HTTP 403 desde el entorno de Supabase; se indican como fuentes temporalmente no disponibles y no se intentan eludir sus protecciones. Los estados pueden cambiar y una respuesta vacía no se considera una integración verificada.
 
 **Carrefour y El Corte Inglés/Hipercor:** en este momento se buscan coincidencias de marca en Open Food Facts cuando existen. No se afirma que exista una integración directa con el catálogo privado de esas cadenas. Los adaptadores directos y los catálogos públicos que sí respondan se pueden ampliar por separado.
 
@@ -44,7 +44,7 @@ No se copian claves de servicio de Supabase al frontend. La aplicación usa úni
 ## Calidad de datos y límites
 
 - La disponibilidad de calorías y macros varía por catálogo. Muchos supermercados publican el nombre del producto, pero no la etiqueta nutricional completa mediante su endpoint de búsqueda.
-- Los valores nutricionales que falten se muestran como desconocidos. Cuando un código de barras coincide con una ficha de Open Food Facts, Ración puede completar los nutrientes ausentes y conserva la atribución de la fuente nutricional.
+- Los valores nutricionales que falten se muestran como desconocidos. Cuando un código de barras coincide con una ficha de Open Food Facts, Ración puede completar los nutrientes ausentes. Si Open Food Facts no ofrece datos útiles y el EAN aparece en AESAN, utiliza AESAN 2022 como respaldo histórico; la interfaz conserva el supermercado como origen del producto y la fuente nutricional por separado.
 - Los catálogos de tiendas pueden cambiar, requerir una ubicación o dejar de responder. Los endpoints usados son los que las tiendas exponen actualmente a la web y no constituyen un compromiso de disponibilidad.
 - **AESAN 2022** ([fuente oficial](https://www.aesan.gob.es/nutricion/composicion-reformulacion-mejora/composicion-alimentos-bebidas)): importadas **29.113 fichas** con EAN y nutrientes cuando están disponibles, en la tabla independiente `aesan_catalog`. De ellas, 27.593 incluyen kcal y 29.108 ingredientes. 462 filas del Excel no produjeron un nombre comercial válido y se dejaron fuera hasta validar su estructura. La fuente es una fotografía de mercado de 2022, no el surtido actual de una tienda.
 - No se incluyen catálogos privados completos de tiendas cuando no hay una vía de acceso pública y permitida. Una página web pública no significa que se pueda replicar sin límites toda su base de datos.
@@ -54,7 +54,8 @@ No se copian claves de servicio de Supabase al frontend. La aplicación usa úni
 - Aplicación: https://raycbn.github.io/racion-pwa/
 - Repositorio: https://github.com/raycbn/racion-pwa
 - GitHub Actions despliega la PWA y ejecuta un smoke test contra la Edge Function: sintaxis, búsqueda federada, relevancia de resultados, coincidencias por tienda, caché y fusión de una ficha de supermercado con nutrientes por código de barras.
-- Ejecución reciente de referencia: https://github.com/raycbn/racion-pwa/actions/runs/40726261316
+- Última prueba automatizada correcta: https://github.com/raycbn/racion-pwa/actions/runs/40737489089
+- Último despliegue de Pages correcto: https://github.com/raycbn/racion-pwa/actions/runs/40737489239
 
 ## Fuentes y licencias
 
