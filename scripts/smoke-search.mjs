@@ -6,7 +6,8 @@ if (!appSource.includes("Consultar NUTRIFEN actualizado (requiere registro)")) {
   throw new Error("La búsqueda ECI no enlaza la fuente nutricional actualizada NUTRIFEN");
 }
 if (!appSource.includes("ficha de la fuente modificada") ||
-    !appSource.includes("candidato nutricional; disponibilidad en ")) {
+    !appSource.includes("candidato nutricional; disponibilidad en ") ||
+    !appSource.includes("sourceUpdatedAt:p.source_modified_at")) {
   throw new Error("La interfaz no muestra la frescura nutricional ni la disponibilidad no verificada");
 }
 if (!appSource.includes("feed autorizado") ||
@@ -14,7 +15,7 @@ if (!appSource.includes("feed autorizado") ||
     appSource.includes("Ración incluye una muestra de fichas públicas de El Corte Inglés")) {
   throw new Error("El texto ECI/Hipercor no refleja que hace falta un feed o permiso autorizado");
 }
-if (!appSource.includes("racion-search-cache-v18")) {
+if (!appSource.includes("racion-search-cache-v19")) {
   throw new Error("La caché local no se ha invalidado tras retirar las muestras antiguas");
 }
 const mergeStart = appSource.indexOf("  function productNutritionScore(");
@@ -50,6 +51,24 @@ if (mergedTest[0].nutritionSource !== "Open Food Facts") {
   throw new Error("Nutrition source was not recorded after merging");
 }
 console.log("OK deduplicación por código de barras → conserva tienda y nutrientes ODbL");
+
+const localNutritionProduct = {
+  name:"Yogur natural",brand:"Marca conocida",source:"Producto guardado",
+  barcode:"8410000000099",kcal:61,protein:3.8,carbs:5,fat:3.1
+};
+const hipercorNutritionCandidate = {
+  name:"Yogur natural",brand:"Marca conocida",source:"Open Food Facts",
+  barcode:"8410000000099",kcal:61,protein:null,carbs:null,fat:null,
+  retailerAvailability:"unverified",targetRetailer:"hipercor",retailerMatchStatus:"nutrition-candidate"
+};
+const mergedCandidate = mergeProductsTest([localNutritionProduct],[hipercorNutritionCandidate]);
+if (mergedCandidate.length !== 1 ||
+    mergedCandidate[0].retailerAvailability !== "unverified" ||
+    mergedCandidate[0].targetRetailer !== "hipercor") {
+  throw new Error("La deduplicación perdió la advertencia de disponibilidad no verificada");
+}
+console.log("OK fusión ECI/Hipercor/Supercor → conserva la advertencia de disponibilidad");
+
 
 console.log("Smoke catalog version: no unauthorized ECI/Hipercor/Supercor product-list extraction; official links + open nutrition sources");
 

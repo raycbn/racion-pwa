@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v18';
+  const SEARCH_CACHE_KEY='racion-search-cache-v19';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -302,6 +302,18 @@
         merged.nutritionSourceUrl=nutrientProvider.nutritionSourceUrl||nutrientProvider.nutrition_source_url||merged.nutritionSourceUrl||'';
         merged.nutritionSourceLicense=nutrientProvider.nutritionSourceLicense||nutrientProvider.nutrition_source_license||merged.nutritionSourceLicense||'';
       }
+      // Preserve the label that explains why a protected-retailer search may
+      // return an open nutrition candidate without proving current store availability.
+      const candidate=[current,raw].find(p=>p.retailerAvailability==='unverified'&&p.targetRetailer);
+      if(candidate){
+        merged.retailerAvailability='unverified';
+        merged.targetRetailer=candidate.targetRetailer;
+        merged.retailerMatchStatus=candidate.retailerMatchStatus||'nutrition-candidate';
+      }
+      const sourceModified=[current,raw]
+        .filter(p=>p.sourceUpdatedAt&&!Number.isNaN(new Date(p.sourceUpdatedAt).getTime()))
+        .sort((a,b)=>new Date(b.sourceUpdatedAt).getTime()-new Date(a.sourceUpdatedAt).getTime())[0];
+      if(sourceModified)merged.sourceUpdatedAt=sourceModified.sourceUpdatedAt;
       if(!merged.ingredients)merged.ingredients=secondary.ingredients||'';
       if(!merged.image)merged.image=secondary.image||'';
       byKey.set(key,merged);
