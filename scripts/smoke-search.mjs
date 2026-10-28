@@ -92,14 +92,14 @@ const nonYogurtPrefixes = new Set([
   "snack","masa","brownie"
 ]);
 const notYogurt = broad.products.filter(product => {
-  const words=normalize(product.name).split(/\\s+/);
+  const words=normalize(product.name).split(/\s+/);
   const yogurtIndex=words.findIndex(word => yogurtTokens.has(word));
   return yogurtIndex < 0 ||
     words.slice(0,yogurtIndex).some(word => nonYogurtPrefixes.has(word));
 });
 const badYogurtMentions = broad.products.filter(product => {
   const name=normalize(product.name);
-  return /^(fruta|frutas|bizcocho|tarta|pastel|galleta|galletas|barrita|barritas|cereal|cereales|helado|pan|bolleria|bollo|magdalena|snack|masa|brownie)\\b/.test(name) &&
+  return /^(fruta|frutas|bizcocho|tarta|pastel|galleta|galletas|barrita|barritas|cereal|cereales|helado|pan|bolleria|bollo|magdalena|snack|masa|brownie)\b/.test(name) &&
     [...yogurtTokens].some(token => name.includes(token));
 });
 if (badYogurtMentions.length) {
