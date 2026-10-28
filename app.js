@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v11';
+  const SEARCH_CACHE_KEY='racion-search-cache-v12';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -145,20 +145,30 @@
     const tokens=query.split(' ').filter(t=>t.length>1&&!['de','del','la','el','las','los','con','para','por','en','un','una','unos','unas','y','the','and','with','fresh'].includes(t));
     if(!tokens.length)return true;
     const name=normalize(String(product.name||''));
-    const yogurt=['yogur','yogurt','yoghurt','yoghourt'];
+    const yogurt=['yogur','yogures','yogurt','yoghurt','yoghourt','iogurt'];
     const askedYogurt=tokens.some(t=>yogurt.includes(t));
-    if(askedYogurt&&!/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(name))return false;
+    if(askedYogurt&&!/^(yogur|yogures|yogurt|yoghurt|yoghourt|iogurt)( |$)/.test(name))return false;
     const synonyms={
+      yogurt:['yogurt','yogur','yogures','iogurt','yoghurt'],yogur:['yogur','yogures','yogurt','iogurt','yoghurt'],
+      iogurt:['iogurt','yogur','yogures','yogurt','yoghurt'],yogures:['yogures','yogur','iogurt','yogurt'],
       greek:['greek','griego','griega'],griego:['greek','griego','griega'],griega:['greek','griego','griega'],
       plain:['plain','natural'],natural:['plain','natural'],
-      strawberry:['strawberry','strawberries','fresa','fresas'],fresa:['strawberry','strawberries','fresa','fresas'],fresas:['strawberry','strawberries','fresa','fresas'],
+      strawberry:['strawberry','strawberries','fresa','fresas'],fresa:['strawberry','strawberries','fresa','fresas'],fresas:['fresa','fresas','strawberries','strawberry'],
       coconut:['coconut','coco'],coco:['coconut','coco'],vanilla:['vanilla','vainilla'],vainilla:['vanilla','vainilla'],
       skim:['skim','desnatada','desnatado'],desnatada:['skim','desnatada','desnatado'],desnatado:['skim','desnatada','desnatado'],
-      milk:['milk','leche'],leche:['milk','leche'],chicken:['chicken','pollo'],pollo:['chicken','pollo'],
+      milk:['milk','leche','llet'],leche:['milk','leche','llet'],llet:['llet','leche','milk'],
+      chicken:['chicken','pollo','pollastre'],pollo:['chicken','pollo','pollastre'],pollastre:['pollastre','pollo','chicken'],
       turkey:['turkey','pavo'],pavo:['turkey','pavo'],beef:['beef','ternera','vacuno'],ternera:['beef','ternera','vacuno'],
-      apple:['apple','manzana'],manzana:['apple','manzana'],banana:['banana','platano'],platano:['banana','platano'],
-      cheese:['cheese','queso'],queso:['cheese','queso'],rice:['rice','arroz'],arroz:['rice','arroz'],
-      oats:['oats','avena'],avena:['oats','avena'],tuna:['tuna','atun'],atun:['tuna','atun']
+      eggs:['eggs','egg','huevos','huevo','ous'],egg:['egg','eggs','huevo','huevos','ous'],huevos:['huevos','huevo','eggs','egg','ous'],ous:['ous','huevo','huevos','egg','eggs'],
+      apple:['apple','manzana','poma'],manzana:['apple','manzana','poma'],poma:['poma','manzana','apple'],
+      banana:['banana','platano','platan'],platano:['banana','platano','platan'],platan:['platan','platano','banana'],
+      cheese:['cheese','queso','formatge'],queso:['cheese','queso','formatge'],formatge:['formatge','queso','cheese'],
+      rice:['rice','arroz','arros'],arroz:['rice','arroz','arros'],arros:['arros','arroz','rice'],
+      oats:['oats','avena','civada'],avena:['oats','avena','civada'],civada:['civada','avena','oats'],
+      bread:['bread','pan','pa'],pan:['pan','bread','pa'],pa:['pa','pan','bread'],
+      oil:['oil','aceite','oli'],aceite:['oil','aceite','oli'],oli:['oli','aceite','oil'],
+      tomato:['tomato','tomatoes','tomate','tomaquet'],tomatoes:['tomatoes','tomato','tomate','tomaquet'],tomate:['tomate','tomatoes','tomato','tomaquet'],tomaquet:['tomaquet','tomate','tomato'],
+      orange:['orange','naranja','taronja'],naranja:['naranja','orange','taronja'],taronja:['taronja','naranja','orange']
     };
     return tokens.every(token=>{
       if(yogurt.includes(token))return /^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(name);

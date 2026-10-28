@@ -5,7 +5,11 @@ const terms = [
   "leche",
   "yogur",
   "leche sin lactosa", "huevos", "arroz", "pasta", "pollo",
-  "pan", "aceite de oliva", "queso", "tomate", "manzana"
+  "pan", "aceite de oliva", "queso", "tomate", "manzana",
+  "Yogur Hacendado", "Leche Hacendado", "Yogur Carrefour",
+  "Yogur Condis", "Leche Bonarea", "Yogur Plusfresc",
+  "Yogur Ametller", "Yogur Bonpreu", "Yogur Makro",
+  "Yogur Masymas", "Leche Gadis"
 ];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -42,7 +46,7 @@ for (let i = 0; i < terms.length; i++) {
       products: item.products,
       error: item.error || undefined
     }));
-    const found = stats.filter(item => item.status === "ok" && item.products > 0).length;
+    const found = stats.filter(item => String(item.status || "").endsWith("ok") && item.products > 0).length;
     console.log(JSON.stringify({
       query,
       visibleProducts: data.products.length,
