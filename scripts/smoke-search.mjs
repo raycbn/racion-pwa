@@ -9,9 +9,10 @@ if (!appSource.includes("ficha de la fuente modificada") ||
     !appSource.includes("candidato nutricional; disponibilidad en ")) {
   throw new Error("La interfaz no muestra la frescura nutricional ni la disponibilidad no verificada");
 }
-if (!appSource.includes("no compila sus páginas de producto de forma automatizada") ||
+if (!appSource.includes("feed autorizado") ||
+    !appSource.includes("permiso escrito") ||
     appSource.includes("Ración incluye una muestra de fichas públicas de El Corte Inglés")) {
-  throw new Error("El texto ECI/Hipercor no refleja el bloqueo de catálogo sin autorización");
+  throw new Error("El texto ECI/Hipercor no refleja que hace falta un feed o permiso autorizado");
 }
 if (!appSource.includes("racion-search-cache-v18")) {
   throw new Error("La caché local no se ha invalidado tras retirar las muestras antiguas");
