@@ -291,6 +291,11 @@ for(const check of eciChecks) {
       JSON.stringify(wronglyUnlabeled.slice(0,3)));
   }
   console.log("OK política",check.label,"→ candidatos nutricionales etiquetados; no se presenta como surtido ni stock.");
+  console.log("ECI candidate diagnostics",check.label,JSON.stringify({
+    returnedProducts:data.products.length,
+    sources:data.sources,
+    sourceStats:data.sourceStats
+  }));
 }
 
 const checks = [
