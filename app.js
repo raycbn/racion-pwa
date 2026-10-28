@@ -248,9 +248,10 @@
   }
   function productCard(p,options={}){
     const wrap=document.createElement('div');wrap.className='result-product';
-    const img=p.image?`<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">`:'<div class="result-fallback">◉</div>';
-    const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]].filter(([,v])=>v!==null&&v!==undefined).map(([name,v])=>`${name} ${fmt(v)}g`).join(' · ');
-    wrap.innerHTML=`${img}<div class="result-copy"><strong>${esc(p.name)}</strong><small>${esc(p.brand||'Sin marca')} · ${p.kcal===null?'kcal no disponibles':`${fmt(p.kcal)} kcal/100${p.unit}`}</small><div class="nutri-chips">${p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':`<span class="nutri-chip">${fmt(p.kcal)} kcal</span>`}${macros?`<span class="nutri-chip">${esc(macros)}</span>`:''}</div></div><button type="button">${options.buttonText||'Seleccionar'}</button>`;
+    const img=p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<div class="result-fallback">◉</div>';
+    const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]].filter(([,v])=>v!==null&&v!==undefined).map(([name,v])=>name+' '+fmt(v)+'g').join(' · ');
+    const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
+    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(p.source||'Fuente no indicada')+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
   async function resolveDrafts(){
