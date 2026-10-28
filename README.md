@@ -32,9 +32,11 @@ La disponibilidad no es uniforme: depende de la tienda, la consulta y las respue
 
 Proyecto: `racion-food-catalog`.
 
-- `food_catalog`: catálogo interno por fuente de supermercado, con índices de búsqueda. Las consultas de lectura/escritura pasan por la Edge Function; la tabla no permite lectura pública directa.
-- `openfoodfacts_catalog`: separado para preservar la atribución y la licencia ODbL de Open Food Facts.
-- `food_search_source_cache`: conserva el resultado y el estado de cada fuente por consulta para acelerar búsquedas repetidas y aplicar backoff cuando falla un servicio.
+- `food_catalog`: catálogo interno de productos por cadena, con índices de búsqueda y lectura directa cerrada al público. Se amplía al buscar y al precargar términos frecuentes.
+- `openfoodfacts_catalog`: tabla separada para respetar la atribución y las obligaciones de la licencia ODbL.
+- `aesan_catalog`: 29.113 registros del fichero AESAN 2022, con EAN, marca, ingredientes, kcal y macros cuando existen. Se conserva el año y la fuente para distinguirlos de los catálogos actuales.
+- `food_search_source_cache`: estado y duración de la caché por fuente y consulta; también aplica un backoff global para endpoints que fallan repetidamente.
+- Las búsquedas al catálogo compartido usan sinónimos ES/EN/CAT en una sola consulta por base de datos (por ejemplo, `manzana`/`apple`/`poma` e `yogur`/`iogurt`) para recuperar productos que ya están guardados con nombres locales.
 - La Edge Function `food-search` consulta las fuentes, filtra por tipo de alimento y supermercado, intenta vincular nutrientes por código de barras y guarda los resultados con su procedencia.
 
 No se copian claves de servicio de Supabase al frontend. La aplicación usa únicamente una clave publicable y las escrituras privilegiadas se realizan en servidor.
@@ -44,7 +46,7 @@ No se copian claves de servicio de Supabase al frontend. La aplicación usa úni
 - La disponibilidad de calorías y macros varía por catálogo. Muchos supermercados publican el nombre del producto, pero no la etiqueta nutricional completa mediante su endpoint de búsqueda.
 - Los valores nutricionales que falten se muestran como desconocidos. Cuando un código de barras coincide con una ficha de Open Food Facts, Ración puede completar los nutrientes ausentes y conserva la atribución de la fuente nutricional.
 - Los catálogos de tiendas pueden cambiar, requerir una ubicación o dejar de responder. Los endpoints usados son los que las tiendas exponen actualmente a la web y no constituyen un compromiso de disponibilidad.
-- La AESAN publica una base de datos de 29.575 alimentos y bebidas comercializados en España durante 2022 ([fuente oficial](https://www.aesan.gob.es/nutricion/composicion-reformulacion-mejora/composicion-alimentos-bebidas)). Todavía no se ha importado de forma masiva: antes hay que confirmar las condiciones de reutilización del archivo y mapear correctamente sus campos.
+- **AESAN 2022** ([fuente oficial](https://www.aesan.gob.es/nutricion/composicion-reformulacion-mejora/composicion-alimentos-bebidas)): importadas **29.113 fichas** con EAN y nutrientes cuando están disponibles, en la tabla independiente `aesan_catalog`. De ellas, 27.593 incluyen kcal y 29.108 ingredientes. 462 filas del Excel no produjeron un nombre comercial válido y se dejaron fuera hasta validar su estructura. La fuente es una fotografía de mercado de 2022, no el surtido actual de una tienda.
 - No se incluyen catálogos privados completos de tiendas cuando no hay una vía de acceso pública y permitida. Una página web pública no significa que se pueda replicar sin límites toda su base de datos.
 
 ## Publicación y pruebas

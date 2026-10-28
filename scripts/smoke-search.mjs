@@ -167,6 +167,7 @@ const addedStores = [
   {query:"Leche Bonarea", key:"bonarea", label:"Bonàrea"},
   {query:"Leche Plusfresc", key:"plusfresc", label:"Plusfresc"},
   {query:"Manzana Bonpreu", key:"bonpreu", label:"Bonpreu i Esclat"},
+  {query:"Poma Bonpreu", key:"bonpreu", label:"Bonpreu i Esclat"},
   {query:"Yogur Ametller", key:"ametller", label:"Ametller Origen"},
   {query:"Leche Alcampo", key:"alcampo", label:"Alcampo"},
   {query:"Leche Makro", key:"makro", label:"Makro España"}
