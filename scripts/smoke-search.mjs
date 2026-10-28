@@ -85,9 +85,13 @@ const missingExpandedSources = expandedSources.filter(source =>
 if (missingExpandedSources.length) {
   throw new Error("No se registraron las nuevas fuentes: " + missingExpandedSources.join(", "));
 }
-const notYogurt = broad.products.filter(product =>
-  !/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(normalize(product.name))
-);
+const notYogurt = broad.products.filter(product => {
+  const name=normalize(product.name);
+  if (product.source === "aesan") {
+    return !/(^| )(yogur|yogures|yogurt|yoghurt|yoghourt|iogurt)( |$)/.test(name);
+  }
+  return !/^(yogur|yogures|yogurt|yoghurt|yoghourt|iogurt)( |$)/.test(name);
+});
 if (notYogurt.length) {
   throw new Error("La búsqueda general mezcló otros alimentos: " +
     notYogurt.map(p => p.name).join("; "));
@@ -98,6 +102,31 @@ if (broad.products.length === 0) {
 }
 console.log("OK búsqueda federada de yogur →", broad.products.length,
   "productos; diagnóstico por fuente:", JSON.stringify(broad.sourceStats || broad.sources));
+
+const aesanStat = broad.sourceStats.find(stat => stat.source === "AESAN (2022)");
+if (!aesanStat || !String(aesanStat.status).startsWith("cached-") || Number(aesanStat.products) === 0) {
+  throw new Error("AESAN 2022 no está integrado en el diagnóstico de búsqueda: " +
+    JSON.stringify(aesanStat || broad.sourceStats));
+}
+const aesanVisible = broad.products.filter(product => product.source === "aesan");
+if (!aesanVisible.length) {
+  throw new Error("La búsqueda general no muestra ningún producto del catálogo AESAN: " +
+    JSON.stringify(broad.products.slice(0, 5)));
+}
+console.log("OK catálogo AESAN 2022 →", aesanVisible.length,
+  "productos visibles; diagnóstico:", JSON.stringify(aesanStat));
+
+const knownAesanBarcode = "8410500027766";
+const barcodeLookup = await search(knownAesanBarcode);
+const matchedAesanBarcode = barcodeLookup.products.find(product =>
+  product.source === "aesan" && String(product.barcode || "").replace(/\\D/g, "") === knownAesanBarcode
+);
+if (!matchedAesanBarcode || Number(matchedAesanBarcode.kcal) !== 31) {
+  throw new Error("El EAN de prueba AESAN no devuelve las calorías esperadas: " +
+    JSON.stringify({products:barcodeLookup.products, sourceStats:barcodeLookup.sourceStats}));
+}
+console.log("OK EAN AESAN", knownAesanBarcode, "→", matchedAesanBarcode.name,
+  matchedAesanBarcode.kcal, "kcal/100", matchedAesanBarcode.unit);
 
 const enriched = broad.products.filter(product => product.nutrition_source);
 console.log("Diagnóstico de nutrientes por código de barras:", enriched.length,

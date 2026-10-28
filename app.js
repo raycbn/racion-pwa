@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v12';
+  const SEARCH_CACHE_KEY='racion-search-cache-v13';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -339,7 +339,7 @@
         fat:numOrNull(p.fat),
         image:p.image_url||'',
         barcode:p.barcode||'',
-        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc'}[p.source]||'Catálogo compartido de Ración'),
+        source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc'}[p.source]||'Catálogo compartido de Ración'),
         storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc'].includes(p.source)?p.source:'',
         confidence:'external',
         updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
@@ -424,6 +424,11 @@
       const res=await getJson(OFF_BASE+'/api/v2/product/'+encodeURIComponent(code)+'.json?fields=code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade');
       if(res.status===1&&res.product)return makeProduct(res.product,'Open Food Facts');
     }catch(e){console.warn('Open Food Facts no respondió al consultar el código',e);}
+    try{
+      const shared=await searchSharedCatalog(String(code));
+      const exactShared=shared.products.find(p=>String(p.barcode||'').replace(/\D/g,'')===String(code).replace(/\D/g,''));
+      if(exactShared){rememberSearch(code,[exactShared],[exactShared.source||'Catálogo compartido de Ración']);return exactShared;}
+    }catch(e){console.warn('El catálogo compartido no respondió para el código',e);}
     const candidates=await searchFoodDataCentral(code);
     const exact=candidates.find(p=>String(p.barcode||'').replace(/\D/g,'')===String(code).replace(/\D/g,''));
     if(exact){rememberSearch(code,[exact],['USDA FoodData Central']);return exact;}
@@ -453,7 +458,8 @@
     const img=p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<div class="result-fallback">◉</div>';
     const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]].filter(([,v])=>v!==null&&v!==undefined).map(([name,v])=>name+' '+fmt(v)+'g').join(' · ');
     const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
-    const sourceLabel=(p.source||'Fuente no indicada')+(p.nutritionSource?' · nutrientes: '+p.nutritionSource:'');
+    const nutritionLabel=p.nutritionSource&&p.nutritionSource!==p.source?' · nutrientes: '+p.nutritionSource:'';
+    const sourceLabel=(p.source||'Fuente no indicada')+nutritionLabel;
     wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+' · '+calories+'</small><div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
