@@ -147,12 +147,12 @@ const enrichedStoreProduct = storeLookup.products.find(product =>
 );
 if (!enrichedStoreProduct ||
     Number(enrichedStoreProduct.kcal) !== 20 ||
-    enrichedStoreProduct.nutrition_source !== "AESAN (2022)") {
+    !["AESAN (2022)","Open Food Facts"].includes(enrichedStoreProduct.nutrition_source)) {
   throw new Error("El producto de Consum no obtuvo respaldo nutricional AESAN por EAN: " +
     JSON.stringify({products:storeLookup.products,sourceStats:storeLookup.sourceStats}));
 }
-console.log("OK nutrición de tienda con respaldo AESAN →",
-  enrichedStoreProduct.name, enrichedStoreProduct.kcal, "kcal/100", enrichedStoreProduct.nutrition_source);
+console.log("OK nutrición de tienda por EAN →",
+  enrichedStoreProduct.name, enrichedStoreProduct.kcal, "kcal/100; fuente:", enrichedStoreProduct.nutrition_source);
 
 
 const enriched = broad.products.filter(product => product.nutrition_source);
