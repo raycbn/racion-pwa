@@ -56,13 +56,14 @@ Enlaces oficiales para continuar la búsqueda en tienda:
 - [Supermercado Hipercor](https://www.hipercor.es/supermercado/)
 - [Catálogos oficiales de Supercor](https://www.supercor.es/catalogos-digitales/)
 
-Para datos nutricionales de marcas españolas, [NUTRIFEN](https://www.fen.org.es/nutrifen/inicio) publica una base comercial más amplia y actualizada, pero requiere registro. No se importa ni automatiza su consulta sin una API/feed documentado y autorización.
+Para datos nutricionales de marcas españolas, [NUTRIFEN](https://www.fen.org.es/nutrifen/inicio) declara más de 50.000 productos y actualización continua. Su buscador se puede consultar online; no he encontrado un feed/API público con licencia de redistribución para importar toda esa base a Ración. Se enlaza como fuente externa, pero no se copia ni se automatiza su extracción sin autorización.
 
 **Qué hace falta para un catálogo 2026 completo de ECI/Hipercor/Supercor:** un feed autorizado del grupo, API documentada, permiso escrito para reutilización, o un proveedor de datos con licencia. Sin ello, Ración mantendrá la búsqueda por EAN y fuentes nutricionales abiertas sin simular un inventario de supermercado.
 
 ## Calidad de datos y límites
 
 - La disponibilidad de calorías y macros varía por catálogo. Muchos supermercados publican el nombre del producto, pero no la etiqueta nutricional completa mediante su endpoint de búsqueda.
+- **Actualidad 2026:** las fichas de Open Food Facts conservan `source_modified_at` cuando esa fecha está disponible y la interfaz muestra la fecha de modificación de la fuente. La búsqueda da prioridad a los registros más recientes, y no convierte la fecha de consulta de Ración en una fecha de actualización del producto. Para ECI/Hipercor/Supercor los resultados de nutrición siguen etiquetados como candidatos, no como surtido confirmado.
 - Los valores nutricionales que falten se muestran como desconocidos. Cuando un código de barras coincide con una ficha de Open Food Facts, Ración puede completar los nutrientes ausentes. Si Open Food Facts no ofrece datos útiles y el EAN aparece en AESAN, utiliza AESAN 2022 como respaldo histórico; la interfaz conserva el supermercado como origen del producto y la fuente nutricional por separado.
 - Los catálogos de tiendas pueden cambiar, requerir una ubicación o dejar de responder. Los endpoints usados son los que las tiendas exponen actualmente a la web y no constituyen un compromiso de disponibilidad.
 - **AESAN 2022** ([fuente oficial](https://www.aesan.gob.es/nutricion/composicion-reformulacion-mejora/composicion-alimentos-bebidas)): importadas **29.113 fichas** con EAN y nutrientes cuando están disponibles, en la tabla independiente `aesan_catalog`. De ellas, 27.593 incluyen kcal y 29.108 ingredientes. 462 filas del Excel no produjeron un nombre comercial válido y se dejaron fuera hasta validar su estructura. La fuente es una fotografía de mercado de 2022, no el surtido actual de una tienda.

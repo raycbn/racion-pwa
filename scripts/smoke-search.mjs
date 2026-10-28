@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-if (!appSource.includes("Consultar NUTRIFEN actualizado (requiere registro)")) {
+if (!appSource.includes("Consultar NUTRIFEN actualizado (consulta online)")) {
   throw new Error("La búsqueda ECI no enlaza la fuente nutricional actualizada NUTRIFEN");
 }
 if (!appSource.includes("ficha de la fuente modificada") ||
@@ -111,6 +111,21 @@ async function search(query) {
 }
 
 const broad = await search("Yogur");
+const current2026Positions = broad.products
+  .map((product,index)=>({product,index}))
+  .filter(({product}) => product.source === "openfoodfacts" &&
+    product.source_modified_at && Date.parse(product.source_modified_at) >= Date.parse("2026-01-01T00:00:00Z"))
+  .map(item=>item.index);
+const historicalAesanPosition = broad.products.findIndex(product => product.source === "aesan");
+if (current2026Positions.length && historicalAesanPosition >= 0 &&
+    Math.min(...current2026Positions) > historicalAesanPosition) {
+  throw new Error("Los datos nutricionales modificados en 2026 aparecen después del respaldo histórico AESAN 2022.");
+}
+if (current2026Positions.length) {
+  console.log("OK frescura 2026 → ficha Open Food Facts actual antes de AESAN 2022");
+} else {
+  console.log("INFO frescura 2026 → no había una ficha con fecha de modificación 2026 en esta consulta; no se inventa la fecha.");
+}
 if (!Array.isArray(broad.sourceStats) || broad.sourceStats.length === 0) {
   throw new Error("La búsqueda no devuelve diagnóstico por fuente; no se pueden detectar catálogos vacíos.");
 }
@@ -289,6 +304,23 @@ for(const check of eciChecks) {
   if(wronglyUnlabeled.length) {
     throw new Error(check.label+" devolvió candidatos nutricionales sin advertencia de disponibilidad: "+
       JSON.stringify(wronglyUnlabeled.slice(0,3)));
+  }
+  const exactBrandPositions=data.products
+    .map((product,index)=>({product,index}))
+    .filter(({product})=>check.aliases.some(alias=>
+      normalize(String(product.brand||"")+" "+String(product.name||"")).includes(normalize(alias))))
+    .map(item=>item.index);
+  const genericPositions=data.products
+    .map((product,index)=>({product,index}))
+    .filter(({product})=>!check.aliases.some(alias=>
+      normalize(String(product.brand||"")+" "+String(product.name||"")).includes(normalize(alias))))
+    .map(item=>item.index);
+  if(exactBrandPositions.length && genericPositions.length &&
+      Math.min(...exactBrandPositions)>Math.min(...genericPositions)) {
+    throw new Error(check.label+" debe priorizar sus coincidencias de marca propia frente a candidatos genéricos.");
+  }
+  if(data.products.some(product=>product.source==="aesan"&&Number(product.observed_year)!==2022)) {
+    throw new Error(check.label+" presenta el respaldo AESAN con un año incorrecto.");
   }
   console.log("OK política",check.label,"→ candidatos nutricionales etiquetados; no se presenta como surtido ni stock.");
   console.log("ECI candidate diagnostics",check.label,JSON.stringify({

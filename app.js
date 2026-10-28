@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v19';
+  const SEARCH_CACHE_KEY='racion-search-cache-v20';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -518,19 +518,19 @@
         url:'https://www.elcorteingles.es/supermercado/',
         label:'Abrir supermercado de El Corte Inglés',
         note:'No hay un feed autorizado de su surtido conectado a Ración. Mientras tanto, la app puede mostrar candidatos nutricionales actuales de fuentes abiertas (con fecha de modificación cuando está disponible) y fichas AESAN de 2022. No son un inventario de la tienda y no confirman que el producto se venda allí, ni su stock o precio. Para importar el catálogo completo hace falta una API/feed autorizado o permiso escrito.',
-        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
+        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (consulta online)'
       },
       hipercor:{
         url:'https://www.hipercor.es/supermercado/',
         label:'Abrir supermercado Hipercor',
         note:'No hay un feed de catálogo autorizado y conectado para Hipercor. Mientras tanto, Ración puede mostrar candidatos nutricionales actuales para el alimento buscado y fichas AESAN de 2022; no son un listado de existencias de Hipercor ni confirman precio o stock. Para el surtido completo necesitamos una integración autorizada.',
-        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
+        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (consulta online)'
       },
       supercor:{
         url:'https://www.supercor.es/catalogos-digitales/',
         label:'Abrir catálogos oficiales de Supercor',
         note:'No hay un catálogo de referencias de Supercor conectado a Ración. Puedes consultar candidatos nutricionales actuales para el alimento buscado, pero no se presentan como surtido de Supercor ni se confirma que estén disponibles allí. Para el catálogo completo hace falta un feed autorizado.',
-        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
+        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (consulta online)'
       }
     };
     return links[retailer.key]||null;

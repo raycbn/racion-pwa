@@ -9,7 +9,11 @@ const terms = [
   "Yogur Hacendado", "Leche Hacendado", "Yogur Carrefour",
   "Yogur Condis", "Leche Bonarea", "Yogur Plusfresc",
   "Yogur Ametller", "Yogur Bonpreu", "Yogur Makro",
-  "Yogur Masymas", "Leche Gadis"
+  "Yogur Masymas", "Leche Gadis",
+  "Yogur El Corte Inglés", "Leche El Corte Inglés",
+  "Queso El Corte Inglés", "Huevos El Corte Inglés",
+  "Yogur Hipercor", "Leche Hipercor",
+  "Yogur Supercor", "Leche Supercor"
 ];
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
