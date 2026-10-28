@@ -184,35 +184,70 @@
     if(state.products.length>500)state.products=state.products.slice(0,500);
     if(changed)saveState();
   }
+  const SUPABASE_URL='https://xegxzmicbxbqjelkvhlx.supabase.co';
+  const SUPABASE_PUBLIC_KEY='sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd';
+  async function searchSharedCatalog(term){
+    const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),7000);
+    try{
+      const response=await fetch(SUPABASE_URL+'/functions/v1/food-search',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','apikey':SUPABASE_PUBLIC_KEY,'Authorization':'Bearer '+SUPABASE_PUBLIC_KEY},
+        body:JSON.stringify({query:String(term||'').trim()}),
+        signal:controller.signal
+      });
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(data.error||('Supabase HTTP '+response.status));
+      const products=(data.products||[]).map(p=>({
+        id:(p.source||'shared')+'-'+(p.source_product_id||p.id),
+        name:p.name||'Producto sin nombre',
+        brand:p.brand||'',
+        unit:p.unit==='ml'?'ml':'g',
+        kcal:numOrNull(p.kcal),
+        protein:numOrNull(p.protein),
+        carbs:numOrNull(p.carbs),
+        fat:numOrNull(p.fat),
+        image:p.image_url||'',
+        barcode:p.barcode||'',
+        source:p.source==='openfoodfacts'?'Open Food Facts':p.source==='usda'?'USDA FoodData Central':'Catálogo compartido de Ración',
+        confidence:'external',
+        updatedAt:p.updated_at||p.last_seen_at||new Date().toISOString(),
+        ingredients:p.ingredients||'',
+        sourceLicense:p.source_license||''
+      })).filter(isUsableProduct);
+      return {products,sources:Array.isArray(data.sources)?data.sources:[],cached:Boolean(data.cached)};
+    }finally{clearTimeout(timer);}
+  }
   async function offSearch(term){
     const clean=String(term||'').trim();
-    if(!clean) return [];
+    if(!clean)return [];
     const key=normalize(clean);
     const cached=searchCache[key];
-    if(cached && Date.now()-cached.savedAt<SEARCH_CACHE_TTL && Array.isArray(cached.products)){
+    if(cached&&Date.now()-cached.savedAt<SEARCH_CACHE_TTL&&Array.isArray(cached.products)){
       lastSearchSources=['Caché local'];return cached.products;
     }
     const local=state.products.filter(p=>normalize(p.name+' '+(p.brand||'')).includes(key)||normalize(p.name)===key).slice(0,8);
-    if(local.length>=5){lastSearchSources=['Catálogo local'];return local;}
+    try{
+      const shared=await searchSharedCatalog(clean);
+      if(shared.products.length){
+        const merged=mergeProducts(local,shared.products);
+        rememberSearch(clean,merged,shared.sources.length?shared.sources:['Catálogo compartido de Ración']);
+        lastSearchSources=shared.sources.length?shared.sources:['Catálogo compartido de Ración'];
+        return merged.slice(0,12);
+      }
+      lastSearchSources=shared.sources;
+      if(shared.cached)return local;
+    }catch(error){console.warn('Catálogo compartido de Ración no disponible; se consultan fuentes externas',error);}
     const checks=await Promise.allSettled([searchOpenFoodFacts(clean),searchFoodDataCentral(clean)]);
     const names=['Open Food Facts','USDA FoodData Central'];
     const sources=[],found=[],errors=[];
     checks.forEach((result,i)=>{
-      if(result.status==='fulfilled'){
-        sources.push(names[i]);
-        if(result.value.length)found.push(result.value);
-      }else{
-        errors.push(names[i]+': '+(result.reason?.message||'fallo de conexión'));
-        console.warn('Fallo de fuente de alimentos '+names[i],result.reason);
-      }
+      if(result.status==='fulfilled'){sources.push(names[i]);if(result.value.length)found.push(result.value);}
+      else{errors.push(names[i]+': '+(result.reason?.message||'fallo de conexión'));console.warn('Fallo de fuente de alimentos '+names[i],result.reason);}
     });
     const merged=mergeProducts(local,...found);
-    if(merged.length){
-      rememberSearch(clean,merged,sources);
-      return merged.slice(0,12);
-    }
+    if(merged.length){rememberSearch(clean,merged,sources);return merged.slice(0,12);}
     lastSearchSources=sources;
-    if(errors.length===checks.length)throw new Error('Los dos catálogos externos no han respondido. '+errors.join(' · '));
+    if(errors.length===checks.length)throw new Error('El catálogo compartido y los dos catálogos externos no han respondido. '+errors.join(' · '));
     return [];
   }
   async function offBarcode(code){
