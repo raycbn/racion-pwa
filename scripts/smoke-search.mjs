@@ -136,7 +136,11 @@ console.log("OK caché compartida →", cachedSourceCount, "fuentes reutilizadas
 const addedStores = [
   {query:"Yogur Condis", key:"condis", label:"Condis"},
   {query:"Leche Bonarea", key:"bonarea", label:"Bonàrea"},
-  {query:"Leche Plusfresc", key:"plusfresc", label:"Plusfresc"}
+  {query:"Leche Plusfresc", key:"plusfresc", label:"Plusfresc"},
+  {query:"Manzana Bonpreu", key:"bonpreu", label:"Bonpreu i Esclat"},
+  {query:"Yogur Ametller", key:"ametller", label:"Ametller Origen"},
+  {query:"Leche Alcampo", key:"alcampo", label:"Alcampo"},
+  {query:"Leche Makro", key:"makro", label:"Makro España"}
 ];
 for (const check of addedStores) {
   const data = await search(check.query);
