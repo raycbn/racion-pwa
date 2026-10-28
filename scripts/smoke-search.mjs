@@ -85,13 +85,28 @@ const missingExpandedSources = expandedSources.filter(source =>
 if (missingExpandedSources.length) {
   throw new Error("No se registraron las nuevas fuentes: " + missingExpandedSources.join(", "));
 }
+const yogurtTokens = new Set(["yogur","yogures","yogurt","yoghurt","yoghourt","iogurt"]);
+const nonYogurtPrefixes = new Set([
+  "fruta","frutas","bizcocho","tarta","pastel","galleta","galletas","barrita",
+  "barritas","cereal","cereales","helado","pan","bolleria","bollo","magdalena",
+  "snack","masa","brownie"
+]);
 const notYogurt = broad.products.filter(product => {
-  const name=normalize(product.name);
-  if (product.source === "aesan") {
-    return !/(^| )(yogur|yogures|yogurt|yoghurt|yoghourt|iogurt)( |$)/.test(name);
-  }
-  return !/^(yogur|yogures|yogurt|yoghurt|yoghourt|iogurt)( |$)/.test(name);
+  const words=normalize(product.name).split(/\\s+/);
+  const yogurtIndex=words.findIndex(word => yogurtTokens.has(word));
+  return yogurtIndex < 0 ||
+    words.slice(0,yogurtIndex).some(word => nonYogurtPrefixes.has(word));
 });
+const badYogurtMentions = broad.products.filter(product => {
+  const name=normalize(product.name);
+  return /^(fruta|frutas|bizcocho|tarta|pastel|galleta|galletas|barrita|barritas|cereal|cereales|helado|pan|bolleria|bollo|magdalena|snack|masa|brownie)\\b/.test(name) &&
+    [...yogurtTokens].some(token => name.includes(token));
+});
+if (badYogurtMentions.length) {
+  throw new Error("Se mezclaron alimentos que solo mencionan yogur como ingrediente: " +
+    badYogurtMentions.map(p => p.name).join("; "));
+}
+
 if (notYogurt.length) {
   throw new Error("La búsqueda general mezcló otros alimentos: " +
     notYogurt.map(p => p.name).join("; "));
