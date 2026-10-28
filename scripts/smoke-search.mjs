@@ -95,6 +95,27 @@ if (cachedSourceCount < 5) {
 }
 console.log("OK caché compartida →", cachedSourceCount, "fuentes reutilizadas; las fuentes con error pueden reintentarse al vencer su backoff");
 
+const addedStores = [
+  {query:"Yogur Condis", key:"condis", label:"Condis"},
+  {query:"Leche Bonarea", key:"bonarea", label:"Bonàrea"},
+  {query:"Leche Plusfresc", key:"plusfresc", label:"Plusfresc"}
+];
+for (const check of addedStores) {
+  const data = await search(check.query);
+  const stat = (data.sourceStats || []).find(item => item.source === check.label);
+  if (!stat) {
+    throw new Error(check.label + " no aparece en el diagnóstico: " +
+      JSON.stringify(data.sourceStats || data.sources));
+  }
+  const direct = data.products.filter(product => product.source === check.key);
+  if (stat.status === "error" || stat.products === 0 || direct.length === 0) {
+    throw new Error(check.label + " no devolvió productos del catálogo propio: " +
+      JSON.stringify({stat, sourceStats:data.sourceStats, products:data.products.slice(0,3)}));
+  }
+  console.log("OK cadena nueva", check.label, "→", direct.length,
+    "productos propios; fuentes:", JSON.stringify(data.sourceStats));
+}
+
 const checks = [
   {
     query: "Yogur Carrefour",
