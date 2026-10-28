@@ -2,6 +2,16 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+if (!appSource.includes("Consultar NUTRIFEN actualizado (requiere registro)")) {
+  throw new Error("La búsqueda ECI no enlaza la fuente nutricional actualizada NUTRIFEN");
+}
+if (!appSource.includes("no compila sus páginas de producto de forma automatizada") ||
+    appSource.includes("Ración incluye una muestra de fichas públicas de El Corte Inglés")) {
+  throw new Error("El texto ECI/Hipercor no refleja el bloqueo de catálogo sin autorización");
+}
+if (!appSource.includes("racion-search-cache-v17")) {
+  throw new Error("La caché local no se ha invalidado tras retirar las muestras antiguas");
+}
 const mergeStart = appSource.indexOf("  function productNutritionScore(");
 const mergeEnd = appSource.indexOf("  function rememberSearch", mergeStart);
 if (mergeStart < 0 || mergeEnd < 0) throw new Error("mergeProducts helper not found");
@@ -36,7 +46,7 @@ if (mergedTest[0].nutritionSource !== "Open Food Facts") {
 }
 console.log("OK deduplicación por código de barras → conserva tienda y nutrientes ODbL");
 
-console.log("Smoke catalog version: ECI + Hipercor public product pages, Supercor fallback explicitly labelled");
+console.log("Smoke catalog version: no unauthorized ECI/Hipercor/Supercor product-list extraction; official links + open nutrition sources");
 
 const endpoint = "https://xegxzmicbxbqjelkvhlx.supabase.co/functions/v1/food-search";
 const publishableKey = "sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd";
@@ -222,28 +232,36 @@ for (const check of addedStores) {
 }
 
 const eciChecks = [
-  {query:"Yogur El Corte Inglés",source:"elcorteingles",label:"Supermercado El Corte Inglés"},
-  {query:"Leche Hipercor",source:"hipercor",label:"Supermercado Hipercor"},
-  {query:"Yogur Supercor",source:"elcorteingles",label:"Catálogo ECI alternativo; stock Supercor no verificado",supercor:true}
+  {query:"Yogur El Corte Inglés",key:"elcorteingles",label:"El Corte Inglés",aliases:["el corte ingles","corte ingles","elcorteingles","eci"]},
+  {query:"Leche Hipercor",key:"hipercor",label:"Hipercor",aliases:["hipercor"]},
+  {query:"Yogur Supercor",key:"supercor",label:"Supercor",aliases:["supercor"]}
 ];
 for(const check of eciChecks) {
   const data=await search(check.query);
-  const direct=data.products.filter(product=>product.source===check.source);
-  if(!direct.length) {
-    throw new Error(check.label+" no devolvió fichas de la fuente esperada: "+
-      JSON.stringify({sources:data.sourceStats||data.sources,products:data.products.slice(0,3)}));
+  const legacy=data.products.filter(product =>
+    ["elcorteingles","hipercor","supercor"].includes(String(product.source||"").toLowerCase()) ||
+    ["elcorteingles","hipercor","supercor"].includes(String(product.storeKey||"").toLowerCase())
+  );
+  if(legacy.length) {
+    throw new Error(check.label+" devolvió fichas de un catálogo comercial no autorizado: "+
+      JSON.stringify(legacy.slice(0,3)));
   }
-  if(check.supercor) {
-    const fallbackStat=(data.sourceStats||[]).find(stat=>stat.source===check.label);
-    if(!fallbackStat || !String(fallbackStat.status).startsWith("cached-")) {
-      throw new Error("La alternativa de Supercor debe advertir que el stock no está verificado: "+
-        JSON.stringify(data.sourceStats||data.sources));
-    }
-    if(data.products.some(product=>product.source==="supercor"||product.storeKey==="supercor")) {
-      throw new Error("Una ficha ECI se etiquetó erróneamente como inventario Supercor.");
-    }
+  const directStats=(data.sourceStats||[]).filter(stat =>
+    /Supermercado El Corte Inglés|Supermercado Hipercor|Catálogo ECI alternativo/i.test(String(stat.source||""))
+  );
+  if(directStats.length) {
+    throw new Error(check.label+" sigue anunciado como catálogo directo: "+
+      JSON.stringify(directStats));
   }
-  console.log("OK catálogo ECI/Hipercor",check.label,"→",direct.length,"fichas; fuentes:",JSON.stringify(data.sourceStats||data.sources));
+  const mismatched=data.products.filter(product => {
+    const text=normalize(String(product.brand||"")+" "+String(product.name||""));
+    return !check.aliases.some(alias=>text.includes(normalize(alias)));
+  });
+  if(mismatched.length) {
+    throw new Error(check.label+" devolvió alimentos sin coincidencia explícita de marca; se confundiría surtido con inventario: "+
+      JSON.stringify(mismatched.slice(0,3)));
+  }
+  console.log("OK política",check.label,"→ sólo marca explícita de fuentes nutricionales abiertas; no se afirma stock ni surtido completo.");
 }
 
 const checks = [

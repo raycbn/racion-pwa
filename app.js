@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v16';
+  const SEARCH_CACHE_KEY='racion-search-cache-v17';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -135,9 +135,17 @@
     return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
-    // AESAN is historical 2022 market data, not a current retailer catalogue.
-    if(['elcorteingles','hipercor','supercor'].includes(retailer.key)&&
-       /aesan/i.test(String(product.source||'')))return false;
+    const legacyCatalogSources=['elcorteingles','hipercor','supercor'];
+    const source=String(product.source||'');
+    // Retired retailer-page samples are not an authorized catalogue feed and must
+    // not reappear from old local search caches. ECI/Hipercor/Supercor queries can
+    // match explicit own-brand labels in open/licensed nutrition datasets only.
+    if(legacyCatalogSources.includes(retailer.key)){
+      if(['elcorteingles','hipercor','supercor'].includes(String(product.storeKey||'')))return false;
+      if(source==='Supermercado El Corte Inglés'||source==='Supermercado Hipercor')return false;
+      const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
+      return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
+    }
     if(product.storeKey===retailer.key)return true;
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
     return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
@@ -344,7 +352,7 @@
         image:p.image_url||'',
         barcode:p.barcode||'',
         source:({openfoodfacts:'Open Food Facts',usda:'USDA FoodData Central',aesan:'AESAN (2022)',mercadona:'Mercadona',consum:'Consum',dia:'DIA',aldi:'ALDI España',lidl:'Lidl España',gadis:'Gadis',eroski:'Eroski',alcampo:'Alcampo',masymas:'Masymas',ametller:'Ametller Origen',bonpreu:'Bonpreu i Esclat',makro:'Makro España',condis:'Condis',bonarea:'Bonàrea',plusfresc:'Plusfresc',elcorteingles:'Supermercado El Corte Inglés',hipercor:'Supermercado Hipercor',supercor:'Supercor'}[p.source]||'Catálogo compartido de Ración'),
-        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc','elcorteingles','hipercor'].includes(p.source)?p.source:'',
+        storeKey:['mercadona','consum','dia','aldi','lidl','gadis','eroski','alcampo','masymas','ametller','bonpreu','makro','condis','bonarea','plusfresc'].includes(p.source)?p.source:'',
         storePrice:numOrNull(p.store_price),
         packageSize:p.package_size||'',
         confidence:'external',
@@ -477,21 +485,25 @@
   }
   function officialRetailerInfo(retailer){
     if(!retailer)return null;
+    const nutritionUrl='https://www.fen.org.es/nutrifen/inicio';
     const links={
       elcorteingles:{
         url:'https://www.elcorteingles.es/supermercado/',
         label:'Abrir supermercado de El Corte Inglés',
-        note:'Ración incluye una muestra de fichas públicas de El Corte Inglés consultadas el 28/10/2026, con EAN, etiqueta nutricional y precio cuando están disponibles. No es el catálogo completo ni un inventario en directo. El precio web puede variar por código postal, tienda y fecha.'
+        note:'No hay un feed autorizado de su surtido conectado a Ración. Sus términos prohíben compilar listas de productos/precios mediante extracción automatizada sin autorización previa por escrito. Ración no usa las fichas recogidas como inventario. Las coincidencias de marca propia en fuentes abiertas o nutrición por EAN no confirman existencias ni precio actual.',
+        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
       },
       hipercor:{
         url:'https://www.hipercor.es/supermercado/',
         label:'Abrir supermercado Hipercor',
-        note:'Ración incluye una muestra de fichas públicas de Hipercor consultadas el 28/10/2026. No es el catálogo completo ni un inventario en directo. El precio web puede variar por código postal, tienda y fecha.'
+        note:'No hay un feed de catálogo autorizado y conectado para Hipercor. Ración no compila sus páginas de producto de forma automatizada. Las coincidencias de fuentes nutricionales abiertas se muestran solo cuando la marca o el EAN encajan y no confirman disponibilidad actual.',
+        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
       },
       supercor:{
         url:'https://www.supercor.es/catalogos-digitales/',
         label:'Abrir catálogos oficiales de Supercor',
-        note:'Supercor no tiene un catálogo SKU público conectado a Ración. Si aparecen alternativas de El Corte Inglés, se identifican como productos de El Corte Inglés y no confirman stock en Supercor. El enlace muestra catálogos de ofertas, no el inventario de una tienda concreta.'
+        note:'No hay un catálogo de referencias de Supercor conectado a Ración. No se presentarán productos de El Corte Inglés como si estuvieran en Supercor. Puedes buscar por EAN para consultar datos nutricionales o introducir la etiqueta manualmente.',
+        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
       }
     };
     return links[retailer.key]||null;
@@ -501,7 +513,10 @@
     if(!info)return null;
     const note=document.createElement('div');
     note.className='search-placeholder retailer-catalog-note';
-    note.innerHTML='<p>'+esc(info.note)+'</p><p><a href="'+esc(info.url)+'" target="_blank" rel="noopener noreferrer">'+esc(info.label)+'</a></p>';
+    const nutritionLink=info.nutritionUrl
+      ?'<p><a href="'+esc(info.nutritionUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(info.nutritionLabel||'Consultar fuente nutricional')+'</a></p>'
+      :'';
+    note.innerHTML='<p>'+esc(info.note)+'</p><p><a href="'+esc(info.url)+'" target="_blank" rel="noopener noreferrer">'+esc(info.label)+'</a></p>'+nutritionLink;
     return note;
   }
   async function resolveDrafts(){
