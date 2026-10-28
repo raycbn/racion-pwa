@@ -40,6 +40,13 @@ const broad = await search("Yogur");
 if (!Array.isArray(broad.sourceStats) || broad.sourceStats.length === 0) {
   throw new Error("La búsqueda no devuelve diagnóstico por fuente; no se pueden detectar catálogos vacíos.");
 }
+const expandedSources = ["Ametller Origen", "Bonpreu i Esclat"];
+const missingExpandedSources = expandedSources.filter(source =>
+  !broad.sourceStats.some(stat => stat.source === source)
+);
+if (missingExpandedSources.length) {
+  throw new Error("No se registraron las nuevas fuentes: " + missingExpandedSources.join(", "));
+}
 const notYogurt = broad.products.filter(product =>
   !/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(normalize(product.name))
 );
