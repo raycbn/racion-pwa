@@ -1,0 +1,208 @@
+(() => {
+  'use strict';
+  const STORAGE_KEY = 'racion.app.v1';
+  const OFF_BASE = 'https://world.openfoodfacts.org';
+  const $ = (id) => document.getElementById(id);
+  const dialogs = ['reviewDialog','searchDialog','quantityDialog','manualDialog','settingsDialog','catalogDialog','barcodeDialog'].reduce((acc,id)=>{acc[id]=$(id);return acc;},{});
+  const todayKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  };
+  const fmt = (n, max=1) => Number.isFinite(Number(n)) ? new Intl.NumberFormat('es-ES',{maximumFractionDigits:max}).format(Number(n)) : '—';
+  const normalize = s => String(s||'').toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+  const defaultState = () => ({
+    version: 1,
+    goals: { kcal: 1650, protein: 130, carbs: 170, fat: 55 },
+    products: [{id:'personal-soy', name:'Salsa de soja habitual', brand:'Personal', unit:'ml', kcal:57, protein:null, carbs:null, fat:null, image:'', barcode:'', source:'Dato guardado por el usuario', confidence:'user', updatedAt:new Date().toISOString()}],
+    entries: [],
+    selectedDate: todayKey()
+  });
+  function loadState(){
+    try { const stored=JSON.parse(localStorage.getItem(STORAGE_KEY)); if(stored && stored.version===1 && Array.isArray(stored.products) && Array.isArray(stored.entries)){ return {...defaultState(),...stored,goals:{...defaultState().goals,...(stored.goals||{})}}; } }
+    catch(e){ console.warn('No se pudieron leer los datos locales',e); }
+    return defaultState();
+  }
+  let state=loadState();
+  // Always start on the actual local date; historical entries remain preserved.
+  state.selectedDate=todayKey();
+  let activeMeal='Todos';
+  let pendingDrafts=[];
+  let selectedProduct=null;
+  let currentStream=null;
+  let scanTimer=null;
+  function saveState(){ try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }catch(e){ toast('No se pudieron guardar los datos. Exporta una copia o libera espacio.'); console.error(e); } }
+  function toast(message){ const el=$('toast');el.textContent=message;el.classList.add('show');clearTimeout(toast._timer);toast._timer=setTimeout(()=>el.classList.remove('show'),2800); }
+  function openDialog(dialog){ if(!dialog.open) dialog.showModal(); }
+  function closeDialog(dialog){ if(dialog.open) dialog.close(); }
+  function esc(s){ return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function kcalFor(product,quantity){ return Number.isFinite(product.kcal) ? product.kcal * quantity/100 : null; }
+  function nutrientFor(product,key,quantity){ return Number.isFinite(product[key]) ? product[key]*quantity/100 : null; }
+  function fmtKcal(v){return v===null || !Number.isFinite(v) ? '—' : `${fmt(v)} kcal`;}
+  function dateText(key){ const [y,m,d]=key.split('-').map(Number);return new Intl.DateTimeFormat('es-ES',{weekday:'long',day:'numeric',month:'long'}).format(new Date(y,m-1,d)); }
+  function getTodayEntries(){return state.entries.filter(e=>e.date===state.selectedDate);}
+  function totals(entries=getTodayEntries()){
+    const out={kcal:0,protein:0,carbs:0,fat:0, knownKcal:0, unknownKcal:0, knownMacros:{protein:0,carbs:0,fat:0}, unknownMacros:{protein:0,carbs:0,fat:0}};
+    for(const e of entries){
+      const k=kcalFor(e.product,e.quantity); if(k===null)out.unknownKcal++; else {out.kcal+=k;out.knownKcal++;}
+      for(const key of ['protein','carbs','fat']){const v=nutrientFor(e.product,key,e.quantity);if(v===null)out.unknownMacros[key]++;else {out[key]+=v;out.knownMacros[key]+=v;}}
+    }
+    return out;
+  }
+  function setProgress(id,value,goal){ $(id).style.width=`${Math.max(0,Math.min(100,goal>0?value/goal*100:0))}%`; }
+  function renderSummary(){
+    const entries=getTodayEntries(), t=totals(entries), g=state.goals;
+    $('dateText').textContent=dateText(state.selectedDate);$('dayLabel').textContent=state.selectedDate===todayKey()?'TU DIARIO · HOY':'TU DIARIO · '+dateText(state.selectedDate).toLocaleUpperCase('es');
+    $('consumedKcal').textContent=`${fmt(t.kcal,0)}${t.unknownKcal?' +':''}`;$('remainingKcal').textContent=`${t.unknownKcal?'Hasta ':''}${fmt(Math.max(0,g.kcal-t.kcal),0)} kcal`;
+    $('goalLabel').textContent=`Objetivo ${fmt(g.kcal,0)} kcal`;$('calorieProgress').style.width=`${Math.min(100,g.kcal>0?t.kcal/g.kcal*100:0)}%`;$('percentLabel').textContent=`${Math.round(g.kcal>0?t.kcal/g.kcal*100:0)}%`;
+    $('proteinValue').textContent=`${fmt(t.protein)}${t.unknownMacros.protein?' +':''}`;$('carbValue').textContent=`${fmt(t.carbs)}${t.unknownMacros.carbs?' +':''}`;$('fatValue').textContent=`${fmt(t.fat)}${t.unknownMacros.fat?' +':''}`;
+    $('proteinGoal').textContent=t.unknownMacros.protein?`Mínimo conocido · ${t.unknownMacros.protein} sin dato`:`Objetivo: ${fmt(g.protein)} g`;$('carbGoal').textContent=t.unknownMacros.carbs?`Mínimo conocido · ${t.unknownMacros.carbs} sin dato`:`Objetivo: ${fmt(g.carbs)} g`;$('fatGoal').textContent=t.unknownMacros.fat?`Mínimo conocido · ${t.unknownMacros.fat} sin dato`:`Objetivo: ${fmt(g.fat)} g`;
+    setProgress('proteinProgress',t.protein,g.protein);setProgress('carbProgress',t.carbs,g.carbs);setProgress('fatProgress',t.fat,g.fat);
+    $('entryCount').textContent=`${entries.length} ${entries.length===1?'alimento':'alimentos'}`;$('allCount').textContent=entries.length;$('productCount').textContent=state.products.length;
+  }
+  function renderDiary(){
+    const all=getTodayEntries();const entries=activeMeal==='Todos'?all:all.filter(e=>e.meal===activeMeal);
+    $('emptyState').hidden=entries.length>0;
+    const container=$('diaryList');container.innerHTML='';
+    const meals=activeMeal==='Todos'?['Desayuno','Comida','Merienda','Cena','Otros']:[activeMeal];
+    for(const meal of meals){const mealEntries=entries.filter(e=>e.meal===meal);if(!mealEntries.length)continue;
+      const group=document.createElement('div');group.className='meal-group';const k=mealEntries.reduce((sum,e)=>sum+(kcalFor(e.product,e.quantity)||0),0);
+      group.innerHTML=`<div class="meal-group-heading"><strong>${esc(meal)}</strong><span>${fmt(k,0)} kcal · ${mealEntries.length} ${mealEntries.length===1?'alimento':'alimentos'}</span></div>`;
+      for(const e of mealEntries){
+        const kx=kcalFor(e.product,e.quantity);const image=e.product.image?`<img src="${esc(e.product.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">`:'<span>◉</span>';
+        const row=document.createElement('div');row.className='food-row';row.innerHTML=`<div class="food-thumb">${image}</div><div class="food-main"><strong>${esc(e.product.name)}</strong><small>${fmt(e.quantity)} ${e.product.unit} · ${e.product.brand?esc(e.product.brand)+' · ':''}${e.product.source==='Open Food Facts'?'Open Food Facts':e.product.source==='Etiqueta introducida por el usuario'?'Etiqueta propia':e.product.source==='Dato guardado por el usuario'?'Dato personal':'dato nutricional guardado'}</small></div><div class="food-kcal"><strong>${kx===null?'—':fmt(kx,0)}</strong><small>kcal</small></div><button class="delete-entry" aria-label="Eliminar ${esc(e.product.name)}" title="Eliminar" data-delete="${esc(e.id)}">×</button>`;
+        group.appendChild(row);
+      }
+      container.appendChild(group);
+    }
+    if(entries.length===0) $('emptyState').hidden=false;
+  }
+  function render(){renderSummary();renderDiary();}
+  function mealKcal(meal){return getTodayEntries().filter(e=>e.meal===meal).reduce((sum,e)=>sum+(kcalFor(e.product,e.quantity)||0),0);}
+  function makeProduct(raw, source='Open Food Facts'){
+    const n=raw.nutriments||{};
+    let kcal=numOrNull(n['energy-kcal_100g'] ?? n['energy-kcal_value']);
+    if(kcal===null){const kj=numOrNull(n['energy-kj_100g'] ?? n['energy-kj_value']);if(kj!==null)kcal=kj/4.184;}
+    return {id:`off-${raw.code||crypto.randomUUID()}`,name:raw.product_name_es||raw.product_name||raw.product_name_en||'Producto sin nombre',brand:raw.brands||'',unit:raw.product_quantity_unit==='ml'?'ml':'g',kcal,protein:numOrNull(n.proteins_100g),carbs:numOrNull(n.carbohydrates_100g),fat:numOrNull(n.fat_100g),image:raw.image_front_small_url||raw.image_front_url||'',barcode:raw.code||'',source,confidence:'external',updatedAt:new Date().toISOString(),ingredients:raw.ingredients_text_es||raw.ingredients_text||'',nutriscore:raw.nutriscore_grade||''};
+  }
+  function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
+  function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
+  async function offSearch(term){
+    const url=`${OFF_BASE}/cgi/search.pl?search_terms=${encodeURIComponent(term)}&search_simple=1&action=process&json=1&page_size=8&fields=code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade`;
+    const res=await fetch(url,{headers:{'Accept':'application/json'}});if(!res.ok)throw new Error(`Búsqueda externa: HTTP ${res.status}`);const data=await res.json();
+    return (data.products||[]).map(raw=>makeProduct(raw)).filter(isUsableProduct);
+  }
+  async function offBarcode(code){
+    const res=await fetch(`${OFF_BASE}/api/v2/product/${encodeURIComponent(code)}.json?fields=code,product_name,product_name_es,product_name_en,brands,image_front_small_url,image_front_url,nutriments,product_quantity_unit,ingredients_text,ingredients_text_es,nutriscore_grade`,{headers:{'Accept':'application/json'}});
+    if(!res.ok)throw new Error(`Consulta por código: HTTP ${res.status}`);const data=await res.json();if(data.status!==1||!data.product)throw new Error('No encontramos ese código en Open Food Facts. Puedes crear el producto con su etiqueta.');return makeProduct(data.product);
+  }
+  function existingMatch(term){
+    const q=normalize(term);if(!q)return null;
+    const exact=state.products.find(p=>normalize(p.name)===q || (p.brand && normalize(`${p.brand} ${p.name}`)===q));if(exact)return exact;
+    const candidates=state.products.map(p=>({p,n:normalize(p.name)})).filter(x=>x.n.length>3 && (q.includes(x.n)||x.n.includes(q))).sort((a,b)=>b.n.length-a.n.length);
+    return candidates[0]?.p||null;
+  }
+  function parseFoodText(text){
+    const pieces=text.trim().split(/\s+(?:y|\+|;)\s+(?=\d+(?:[.,]\d+)?\s*(?:kg|g|gr|gramos?|ml|l|litros?)\b)|\s*;\s*|\s*,\s*(?=\d+(?:[.,]\d+)?\s*(?:kg|g|gr|gramos?|ml|l|litros?)\b)/i).map(x=>x.trim()).filter(Boolean);
+    return pieces.map((piece,index)=>{
+      const m=piece.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|gr|gramos?|ml|l|litros?)\s+(?:de\s+)?(.+)$/i);
+      if(!m)return {draftId:`d-${Date.now()}-${index}`,raw:piece,quantity:null,unit:null,query:piece.trim(),product:null,candidates:[],status:'quantity-needed',error:'No hemos detectado la cantidad y unidad. Usa, por ejemplo, «150 g de arroz».',busy:false};
+      let quantity=Number(m[1].replace(',','.')),unit=m[2].toLowerCase();
+      if(unit==='kg'){quantity*=1000;unit='g';}else if(unit==='l'||unit==='litro'||unit==='litros'){quantity*=1000;unit='ml';}else if(['gr','gramo','gramos'].includes(unit))unit='g';
+      const query=m[3].trim().replace(/[.!?]+$/,'');const product=existingMatch(query);
+      const draft={draftId:`d-${Date.now()}-${index}`,raw:piece,quantity,unit,query,product:null,candidates:[],status:'searching',error:'',busy:false};
+      if(product){if(product.unit!==unit){draft.status='unit-mismatch';draft.error=`El producto guardado usa ${product.unit}, pero has indicado ${unit}. Revisa la unidad.`;}else{draft.product=product;draft.status='matched';}}
+      return draft;
+    });
+  }
+  function productCard(p,options={}){
+    const wrap=document.createElement('div');wrap.className='result-product';
+    const img=p.image?`<img src="${esc(p.image)}" alt="" loading="lazy" referrerpolicy="no-referrer">`:'<div class="result-fallback">◉</div>';
+    const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]].filter(([,v])=>v!==null&&v!==undefined).map(([name,v])=>`${name} ${fmt(v)}g`).join(' · ');
+    wrap.innerHTML=`${img}<div class="result-copy"><strong>${esc(p.name)}</strong><small>${esc(p.brand||'Sin marca')} · ${p.kcal===null?'kcal no disponibles':`${fmt(p.kcal)} kcal/100${p.unit}`}</small><div class="nutri-chips">${p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':`<span class="nutri-chip">${fmt(p.kcal)} kcal</span>`}${macros?`<span class="nutri-chip">${esc(macros)}</span>`:''}</div></div><button type="button">${options.buttonText||'Seleccionar'}</button>`;
+    wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
+  }
+  async function resolveDrafts(){
+    $('draftList').innerHTML='';for(const d of pendingDrafts){if(d.status==='matched' || d.status==='selected')continue;if(d.status==='quantity-needed'||d.status==='unit-mismatch')continue;
+      d.busy=true;
+      try {d.candidates=await offSearch(d.query);d.status=d.candidates.length?'candidates':'not-found';if(d.candidates.length===1 && normalize(d.candidates[0].name)===normalize(d.query) && d.candidates[0].unit===d.unit){d.status='candidates';}}
+      catch(e){d.status='search-error';d.error='No pudimos consultar el catálogo externo. Comprueba tu conexión o crea el producto manualmente.';}
+      d.busy=false;
+    }
+    renderDrafts();
+  }
+  function renderDrafts(){
+    const list=$('draftList');list.innerHTML='';
+    for(const d of pendingDrafts){
+      const card=document.createElement('article');card.className='draft-card';
+      const status=(d.status==='matched'||d.status==='selected')?'<span class="draft-status ok">Producto identificado</span>':d.status==='candidates'?'<span class="draft-status">Elige producto</span>':d.status==='searching'||d.busy?'<span class="draft-status">Buscando…</span>':'<span class="draft-status">Requiere revisión</span>';
+      card.innerHTML=`<div class="draft-head"><div class="draft-heading"><strong>${esc(d.query||d.raw)}</strong><small>${d.quantity===null?'Cantidad sin detectar':`${fmt(d.quantity)} ${esc(d.unit)} · ${esc(d.raw)}`}</small></div>${status}</div>`;
+      if(d.product){const k=d.quantity===null?null:kcalFor(d.product,d.quantity);card.querySelector('.draft-heading').insertAdjacentHTML('beforeend',`<small>${esc(d.product.name)} · ${d.quantity===null?'cantidad pendiente':`${fmtKcal(k)} por esta cantidad`}${d.product.source==='Dato guardado por el usuario'?' · dato personal':''}</small>`);}
+      if(d.error && !d.product) card.insertAdjacentHTML('beforeend',`<p class="draft-note">${esc(d.error)}</p>`);
+      if(d.candidates?.length && !d.product){const choices=document.createElement('div');choices.className='candidate-list';d.candidates.slice(0,5).forEach(p=>choices.appendChild(productCard(p,{buttonText:'Elegir',onSelect:selected=>{if(selected.unit!==d.unit){toast(`El producto usa ${selected.unit}. Cambia la cantidad a esa unidad o crea una ficha correcta.`);return;}d.product=selected;d.status='selected';d.error='';addProductIfNeeded(selected);renderDrafts();}})));card.appendChild(choices);}
+      const actions=document.createElement('div');actions.className='draft-actions';
+      if(!d.product){const manual=document.createElement('button');manual.className='secondary-btn';manual.type='button';manual.textContent='Introducir etiqueta';manual.addEventListener('click',()=>openManualForDraft(d));actions.appendChild(manual);const search=document.createElement('button');search.className='secondary-btn';search.type='button';search.textContent='Buscar otra vez';search.addEventListener('click',async()=>{try{d.candidates=await offSearch(d.query);d.status=d.candidates.length?'candidates':'not-found';d.error=d.candidates.length?'':'No hay resultados para ese nombre.';}catch{d.status='search-error';d.error='No se pudo buscar el producto.';}renderDrafts();});actions.appendChild(search);}
+      else {const change=document.createElement('button');change.className='secondary-btn';change.type='button';change.textContent='Cambiar producto';change.addEventListener('click',async()=>{d.product=null;d.status='searching';renderDrafts();try{d.candidates=await offSearch(d.query);d.status=d.candidates.length?'candidates':'not-found';}catch{d.status='search-error';d.error='No se pudo buscar.';}renderDrafts();});actions.appendChild(change);}
+      card.appendChild(actions);list.appendChild(card);
+    }
+    const accepted=pendingDrafts.filter(d=>d.product && d.quantity>0 && d.product.unit===d.unit).length;
+    $('reviewSummary').textContent=`${accepted} de ${pendingDrafts.length} alimentos listos para añadir`;
+    $('confirmDraftsBtn').disabled=accepted===0;$('confirmDraftsBtn').style.opacity=accepted===0?'.45':'1';
+  }
+  function addProductIfNeeded(p){if(!state.products.some(x=>x.id===p.id)){state.products.push({...p});saveState();}}
+  $('naturalForm').addEventListener('submit',async e=>{
+    e.preventDefault();const text=$('naturalInput').value.trim();if(!text)return;
+    pendingDrafts=parseFoodText(text);const meal=$('mealSelect').value;pendingDrafts.forEach(d=>d.meal=meal);
+    openDialog(dialogs.reviewDialog);renderDrafts();await resolveDrafts();
+  });
+  $('confirmDraftsBtn').addEventListener('click',()=>{
+    const good=pendingDrafts.filter(d=>d.product && d.quantity>0 && d.product.unit===d.unit);
+    if(!good.length)return;
+    const now=new Date().toISOString();for(const d of good){addProductIfNeeded(d.product);state.entries.push({id:crypto.randomUUID(),date:state.selectedDate,meal:d.meal||$('mealSelect').value,quantity:d.quantity,product:{...d.product},createdAt:now});}
+    saveState();render();closeDialog(dialogs.reviewDialog);$('naturalInput').value='';pendingDrafts=[];toast(`${good.length} ${good.length===1?'alimento añadido':'alimentos añadidos'} al diario`);
+  });
+  $('openSearchBtn').addEventListener('click',()=>{ $('productSearchInput').value='';$('searchResults').innerHTML='<div class="search-placeholder"><span>⌕</span><p>Busca un producto por nombre, marca o código.</p></div>';openDialog(dialogs.searchDialog);setTimeout(()=>$('productSearchInput').focus(),100); });
+  $('searchForm').addEventListener('submit',async e=>{
+    e.preventDefault();const q=$('productSearchInput').value.trim();if(!q)return;const out=$('searchResults');out.innerHTML='<div class="search-placeholder"><span>◌</span><p>Buscando productos…</p></div>';
+    const local=state.products.filter(p=>normalize(`${p.brand} ${p.name}`).includes(normalize(q))).slice(0,5);
+    try{const remote=await offSearch(q);const all=[...local,...remote.filter(r=>!local.some(p=>p.barcode&&p.barcode===r.barcode))].slice(0,10);out.innerHTML='';if(!all.length){out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>No encontramos resultados. Puedes crear el producto introduciendo su etiqueta nutricional.</p></div>';return;}all.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));}
+    catch(err){out.innerHTML='';if(local.length){local.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));}else{out.innerHTML=`<div class="search-placeholder"><span>!</span><p>No se pudo consultar Open Food Facts ahora. Revisa la conexión o crea el producto manualmente.</p></div>`;}console.warn(err);}
+  });
+  function openQuantityForProduct(product){
+    selectedProduct=product;$('quantityTitle').textContent=product.name;$('quantityUnit').textContent=product.unit;$('quantityInput').value=product.unit==='ml'?'10':'100';$('quantityMeal').value=$('mealSelect').value;const img=product.image?`<img src="${esc(product.image)}" alt="">`:'<div class="result-fallback">◉</div>';$('quantityProduct').innerHTML=`${img}<div><strong>${esc(product.name)}</strong><small>${esc(product.brand||'Sin marca')} · ${product.kcal===null?'Calorías sin dato':`${fmt(product.kcal)} kcal/100${product.unit}`}</small></div>`;renderQuantityPreview();closeDialog(dialogs.searchDialog);closeDialog(dialogs.reviewDialog);openDialog(dialogs.quantityDialog);
+  }
+  function renderQuantityPreview(){if(!selectedProduct)return;const q=numOrNull($('quantityInput').value)||0;const p=selectedProduct;$('quantityPreview').innerHTML=[['kcal',kcalFor(p,q)],['Proteínas',nutrientFor(p,'protein',q)],['Hidratos',nutrientFor(p,'carbs',q)],['Grasas',nutrientFor(p,'fat',q)]].map(([l,v])=>`<div><strong>${v===null?'—':fmt(v)}</strong><small>${l}</small></div>`).join('');}
+  $('quantityInput').addEventListener('input',renderQuantityPreview);
+  $('quantityForm').addEventListener('submit',e=>{e.preventDefault();if(!selectedProduct)return;const q=numOrNull($('quantityInput').value);if(q===null||q<=0){toast('Introduce una cantidad válida.');return;}addProductIfNeeded(selectedProduct);state.entries.push({id:crypto.randomUUID(),date:state.selectedDate,meal:$('quantityMeal').value,quantity:q,product:{...selectedProduct},createdAt:new Date().toISOString()});saveState();render();closeDialog(dialogs.quantityDialog);toast('Alimento añadido al diario');selectedProduct=null;});
+  $('openManualBtn').addEventListener('click',()=>openManualForDraft(null));
+  function openManualForDraft(draft){$('manualForm').dataset.draftId=draft?.draftId||'';$('manualName').value=draft?.query||'';$('manualUnit').value=draft?.unit||'g';$('manualKcal').value='';$('manualProtein').value='';$('manualCarbs').value='';$('manualFat').value='';$('manualBrand').value='';openDialog(dialogs.manualDialog);}
+  $('manualForm').addEventListener('submit',e=>{
+    e.preventDefault();const p={id:`manual-${crypto.randomUUID()}`,name:$('manualName').value.trim(),brand:$('manualBrand').value.trim(),unit:$('manualUnit').value,kcal:numOrNull($('manualKcal').value),protein:numOrNull($('manualProtein').value),carbs:numOrNull($('manualCarbs').value),fat:numOrNull($('manualFat').value),image:'',barcode:'',source:'Etiqueta introducida por el usuario',confidence:'user',updatedAt:new Date().toISOString()};if(!p.name||p.kcal===null){toast('El nombre y las kcal de la etiqueta son necesarios.');return;}
+    state.products.push(p);saveState();const draftId=$('manualForm').dataset.draftId;if(draftId){const d=pendingDrafts.find(x=>x.draftId===draftId);if(d){d.product=p;d.unit=p.unit;d.status='selected';d.error='';renderDrafts();closeDialog(dialogs.manualDialog);openDialog(dialogs.reviewDialog);toast('Producto guardado y vinculado al alimento');return;}}
+    closeDialog(dialogs.manualDialog);render();openQuantityForProduct(p);toast('Producto guardado en tu catálogo');
+  });
+  $('settingsBtn').addEventListener('click',()=>{ $('goalKcal').value=state.goals.kcal;$('goalProtein').value=state.goals.protein;$('goalCarbs').value=state.goals.carbs;$('goalFat').value=state.goals.fat;openDialog(dialogs.settingsDialog);});
+  $('settingsForm').addEventListener('submit',e=>{e.preventDefault();state.goals={kcal:Number($('goalKcal').value),protein:Number($('goalProtein').value),carbs:Number($('goalCarbs').value),fat:Number($('goalFat').value)};saveState();render();closeDialog(dialogs.settingsDialog);toast('Objetivos actualizados');});
+  document.querySelectorAll('.meal-tab').forEach(btn=>btn.addEventListener('click',()=>{activeMeal=btn.dataset.meal;document.querySelectorAll('.meal-tab').forEach(b=>{b.classList.toggle('active',b===btn);b.setAttribute('aria-selected',b===btn?'true':'false');});renderDiary();}));
+  $('diaryList').addEventListener('click',e=>{const btn=e.target.closest('[data-delete]');if(!btn)return;state.entries=state.entries.filter(x=>x.id!==btn.dataset.delete);saveState();render();toast('Alimento eliminado del diario');});
+  $('emptyAddBtn').addEventListener('click',()=>$('naturalInput').focus());
+  function downloadFile(filename,content,type){const blob=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
+  $('exportBtn').addEventListener('click',()=>{const entries=getTodayEntries();const rows=[['fecha','comida','producto','marca','cantidad','unidad','kcal_por_100','kcal_registradas','proteina_por_100','hidratos_por_100','grasas_por_100','fuente']];for(const e of entries){rows.push([e.date,e.meal,e.product.name,e.product.brand,e.quantity,e.product.unit,e.product.kcal,kcalFor(e.product,e.quantity),e.product.protein,e.product.carbs,e.product.fat,e.product.source]);}const csv='\ufeff'+rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\r\n');downloadFile(`racion-${state.selectedDate}.csv`,csv,'text/csv;charset=utf-8');toast('Diario exportado a CSV');});
+  $('backupBtn').addEventListener('click',()=>downloadFile(`racion-copia-${todayKey()}.json`,JSON.stringify(state,null,2),'application/json')); 
+  $('resetBtn').addEventListener('click',()=>{if(!confirm('¿Seguro que quieres borrar el diario, productos personalizados y objetivos guardados en este navegador? Esta acción no se puede deshacer. Descarga primero una copia si quieres conservarlos.'))return;state=defaultState();saveState();render();closeDialog(dialogs.settingsDialog);toast('Datos locales borrados');});
+  $('catalogBtn').addEventListener('click',renderCatalogAndOpen);$('catalogAddBtn').addEventListener('click',()=>{closeDialog(dialogs.catalogDialog);openManualForDraft(null);});
+  function renderCatalogAndOpen(){const list=$('catalogList');list.innerHTML='';if(!state.products.length)list.innerHTML='<div class="search-placeholder">Todavía no tienes productos guardados.</div>';for(const p of state.products){const row=document.createElement('div');row.className='catalog-row';row.innerHTML=`<div class="food-thumb">${p.image?`<img src="${esc(p.image)}" alt="">`:'◉'}</div><div class="catalog-row-copy"><strong>${esc(p.name)}</strong><small>${esc(p.brand||'Sin marca')} · ${p.kcal===null?'kcal sin dato':`${fmt(p.kcal)} kcal/100${p.unit}`}</small></div>${p.id==='personal-soy'?'<span class="draft-status ok">Personal</span>':`<button type="button" data-remove-product="${esc(p.id)}">Eliminar</button>`}`;list.appendChild(row);}openDialog(dialogs.catalogDialog);}
+  $('catalogList').addEventListener('click',e=>{const btn=e.target.closest('[data-remove-product]');if(!btn)return;const id=btn.dataset.removeProduct;if(state.entries.some(entry=>entry.product.id===id)){if(!confirm('Este producto aparece en tu historial. Si lo eliminas del catálogo, los registros existentes se conservarán. ¿Continuar?'))return;}state.products=state.products.filter(p=>p.id!==id);saveState();renderSummary();renderCatalogAndOpen();});
+  $('openBarcodeBtn').addEventListener('click',()=>{ $('barcodeInput').value='';$('cameraMessage').textContent='Si tu navegador admite el escáner, podrás apuntar al código.';openDialog(dialogs.barcodeDialog);});
+  $('barcodeForm').addEventListener('submit',async e=>{e.preventDefault();const code=$('barcodeInput').value.trim();await lookupBarcode(code);});
+  async function lookupBarcode(code){try{toast('Consultando el código…');const p=await offBarcode(code);closeDialog(dialogs.barcodeDialog);openQuantityForProduct(p);}catch(e){toast(e.message||'No se encontró el producto.');console.warn(e);}}
+  $('startCameraBtn').addEventListener('click',async()=>{
+    if(!('BarcodeDetector'in window)){ $('cameraMessage').textContent='Este navegador no incluye BarcodeDetector. Puedes usar el campo de código de barras de abajo.';toast('Escáner de cámara no disponible en este navegador');return; }
+    try{currentStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});const video=$('cameraVideo');video.srcObject=currentStream;video.style.display='block';await video.play();$('cameraMessage').textContent='Apunta al código de barras. Mantén el envase quieto.';$('startCameraBtn').textContent='Cámara activa';const detector=new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e','code_128']});clearInterval(scanTimer);scanTimer=setInterval(async()=>{try{if(video.readyState<2)return;const codes=await detector.detect(video);if(codes.length&&codes[0].rawValue){$('barcodeInput').value=codes[0].rawValue;stopCamera();await lookupBarcode(codes[0].rawValue);}}catch(e){console.warn('Lectura de código',e);}},350);}
+    catch(e){$('cameraMessage').textContent='No se ha podido abrir la cámara. Comprueba los permisos o introduce el código manualmente.';toast('No se pudo abrir la cámara');}
+  });
+  function stopCamera(){clearInterval(scanTimer);scanTimer=null;if(currentStream){currentStream.getTracks().forEach(t=>t.stop());currentStream=null;}const v=$('cameraVideo');v.pause();v.srcObject=null;v.style.display='none';$('startCameraBtn').textContent='Abrir cámara';}
+  dialogs.barcodeDialog.addEventListener('close',stopCamera);
+  if('serviceWorker'in navigator && location.protocol!=='file:')window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(err=>console.warn('PWA offline no disponible',err)));
+  // First-run personalization defaults to the user's already-confirmed soy sauce value; other foods must be identified.
+  saveState();render();
+})();
