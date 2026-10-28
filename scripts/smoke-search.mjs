@@ -37,6 +37,9 @@ async function search(query) {
 }
 
 const broad = await search("Yogur");
+if (!Array.isArray(broad.sourceStats) || broad.sourceStats.length === 0) {
+  throw new Error("La búsqueda no devuelve diagnóstico por fuente; no se pueden detectar catálogos vacíos.");
+}
 const notYogurt = broad.products.filter(product =>
   !/^(yogur|yogurt|yoghurt|yoghourt)( |$)/.test(normalize(product.name))
 );
