@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v3';
+  const SEARCH_CACHE_KEY='racion-search-cache-v4';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -121,7 +121,7 @@
     return null;
   }
   function stripRetailerFromSearch(term,retailer){
-    return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\\s+/g,' ').trim();
+    return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
     const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
@@ -386,27 +386,32 @@
     const q=$('productSearchInput').value.trim();
     if(!q)return;
     const out=$('searchResults'),status=$('searchSourceStatus');
-    out.innerHTML='<div class="search-placeholder"><span>◌</span><p>Buscando en varios catálogos…</p></div>';
-    if(status)status.textContent='Consultando el catálogo local y las bases nutricionales externas.';
-    const local=state.products.filter(p=>normalize((p.brand||'')+' '+p.name).includes(normalize(q))).slice(0,8);
+    const retailer=retailerIntentForSearch(q);
+    const matchesQueryScope=p=>!retailer||productMatchesRetailer(p,retailer);
+    out.innerHTML='<div class="search-placeholder"><span>◌</span><p>Buscando en el catálogo compartido y las fuentes disponibles…</p></div>';
+    if(status)status.textContent='Consultando el catálogo de Ración y las fuentes externas.';
+    const local=state.products.filter(p=>normalize((p.brand||'')+' '+p.name).includes(normalize(q))&&matchesQueryScope(p)).slice(0,8);
     try{
       const remote=await offSearch(q);
-      const all=mergeProducts(local,remote).slice(0,12);
+      const all=mergeProducts(local,remote.filter(matchesQueryScope)).slice(0,12);
       out.innerHTML='';
-      if(status)status.textContent='Fuentes: '+(lastSearchSources.length?lastSearchSources.join(' · '):'catálogo local')+'. Los resultados encontrados se guardan en la caché de este dispositivo.';
+      if(status)status.textContent='Fuentes: '+(lastSearchSources.length?lastSearchSources.join(' · '):'sin coincidencias')+'. Se guardan localmente solo los resultados válidos.';
       if(!all.length){
-        out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>No encontramos una coincidencia para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.</p></div>';
+        const msg=retailer
+          ?'No encontramos productos de '+esc(retailer.key)+' para «'+esc(q)+'». No mostraremos productos de otras marcas. Prueba «'+esc(stripRetailerFromSearch(q,retailer))+' '+esc(retailer.aliases[1]||retailer.key)+'» o introduce los datos de la etiqueta.'
+          :'No encontramos una coincidencia para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.';
+        out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>'+msg+'</p></div>';
         return;
       }
       all.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
     }catch(err){
       out.innerHTML='';
       if(local.length){
-        local.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
-        if(status)status.textContent='Mostrando productos guardados; los catálogos externos no respondieron. Puedes seguir usando los datos locales.';
+        local.filter(matchesQueryScope).forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
+        if(status)status.textContent='Mostrando coincidencias guardadas; las fuentes externas no respondieron.';
       }else{
-        out.innerHTML='<div class="search-placeholder"><span>!</span><p>No respondieron los catálogos de alimentos en este intento. Comprueba la conexión, vuelve a intentarlo o introduce los datos de la etiqueta manualmente.</p></div>';
-        if(status)status.textContent='No se completó la búsqueda externa. No se ha registrado ningún alimento.';
+        out.innerHTML='<div class="search-placeholder"><span>!</span><p>No respondieron los catálogos en este intento. Comprueba la conexión o introduce manualmente la etiqueta nutricional.</p></div>';
+        if(status)status.textContent='La búsqueda no se completó. No se ha registrado ningún alimento.';
       }
       console.warn('Búsqueda de productos no disponible',err);
     }
