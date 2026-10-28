@@ -5,11 +5,15 @@ const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 if (!appSource.includes("Consultar NUTRIFEN actualizado (requiere registro)")) {
   throw new Error("La búsqueda ECI no enlaza la fuente nutricional actualizada NUTRIFEN");
 }
+if (!appSource.includes("ficha de la fuente modificada") ||
+    !appSource.includes("candidato nutricional; disponibilidad en ")) {
+  throw new Error("La interfaz no muestra la frescura nutricional ni la disponibilidad no verificada");
+}
 if (!appSource.includes("no compila sus páginas de producto de forma automatizada") ||
     appSource.includes("Ración incluye una muestra de fichas públicas de El Corte Inglés")) {
   throw new Error("El texto ECI/Hipercor no refleja el bloqueo de catálogo sin autorización");
 }
-if (!appSource.includes("racion-search-cache-v17")) {
+if (!appSource.includes("racion-search-cache-v18")) {
   throw new Error("La caché local no se ha invalidado tras retirar las muestras antiguas");
 }
 const mergeStart = appSource.indexOf("  function productNutritionScore(");
@@ -246,22 +250,27 @@ for(const check of eciChecks) {
     throw new Error(check.label+" devolvió fichas de un catálogo comercial no autorizado: "+
       JSON.stringify(legacy.slice(0,3)));
   }
-  const directStats=(data.sourceStats||[]).filter(stat =>
-    /Supermercado El Corte Inglés|Supermercado Hipercor|Catálogo ECI alternativo/i.test(String(stat.source||""))
+  if(data.catalogMode!=="nutrition-candidates-not-store-inventory") {
+    throw new Error(check.label+" no está marcado como búsqueda nutricional sin inventario confirmado: "+
+      JSON.stringify({catalogMode:data.catalogMode,sourceStats:data.sourceStats}));
+  }
+  const notice=(data.sourceStats||[]).find(stat =>
+    stat.status==="not-integrated" && Number(stat.products)===0
   );
-  if(directStats.length) {
-    throw new Error(check.label+" sigue anunciado como catálogo directo: "+
-      JSON.stringify(directStats));
+  if(!notice) {
+    throw new Error(check.label+" debe mostrar explícitamente que no hay catálogo de tienda autorizado conectado.");
   }
-  const mismatched=data.products.filter(product => {
+  const wronglyUnlabeled=data.products.filter(product => {
     const text=normalize(String(product.brand||"")+" "+String(product.name||""));
-    return !check.aliases.some(alias=>text.includes(normalize(alias)));
+    const brandMatches=check.aliases.some(alias=>text.includes(normalize(alias)));
+    return !brandMatches &&
+      (product.retailer_availability!=="unverified" || product.target_retailer!==check.key);
   });
-  if(mismatched.length) {
-    throw new Error(check.label+" devolvió alimentos sin coincidencia explícita de marca; se confundiría surtido con inventario: "+
-      JSON.stringify(mismatched.slice(0,3)));
+  if(wronglyUnlabeled.length) {
+    throw new Error(check.label+" devolvió candidatos nutricionales sin advertencia de disponibilidad: "+
+      JSON.stringify(wronglyUnlabeled.slice(0,3)));
   }
-  console.log("OK política",check.label,"→ sólo marca explícita de fuentes nutricionales abiertas; no se afirma stock ni surtido completo.");
+  console.log("OK política",check.label,"→ candidatos nutricionales etiquetados; no se presenta como surtido ni stock.");
 }
 
 const checks = [

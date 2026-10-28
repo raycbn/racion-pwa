@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v17';
+  const SEARCH_CACHE_KEY='racion-search-cache-v18';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -135,14 +135,14 @@
     return (' '+normalize(term)+' ').replace(' '+(retailer.matched||retailer.key)+' ',' ').replace(/\s+/g,' ').trim();
   }
   function productMatchesRetailer(product,retailer){
-    const legacyCatalogSources=['elcorteingles','hipercor','supercor'];
+    const protectedRetailers=['elcorteingles','hipercor','supercor'];
     const source=String(product.source||'');
-    // Retired retailer-page samples are not an authorized catalogue feed and must
-    // not reappear from old local search caches. ECI/Hipercor/Supercor queries can
-    // match explicit own-brand labels in open/licensed nutrition datasets only.
-    if(legacyCatalogSources.includes(retailer.key)){
-      if(['elcorteingles','hipercor','supercor'].includes(String(product.storeKey||'')))return false;
-      if(source==='Supermercado El Corte Inglés'||source==='Supermercado Hipercor')return false;
+    // The full catalogue requires an authorized feed. A nutrition candidate may match
+    // the food term without implying that the retailer currently sells it.
+    if(protectedRetailers.includes(retailer.key)){
+      if(product.retailerAvailability==='unverified' && product.targetRetailer===retailer.key)return true;
+      if(protectedRetailers.includes(String(product.storeKey||'')))return false;
+      if(['Supermercado El Corte Inglés','Supermercado Hipercor','Supercor'].includes(source))return false;
       const hay=' '+normalize(String(product.brand||'')+' '+String(product.name||''))+' ';
       return retailer.aliases.some(alias=>hay.includes(' '+normalize(alias)+' '));
     }
@@ -360,9 +360,15 @@
         ingredients:p.ingredients||'',
         sourceLicense:p.source_license||'',
         sourceUrl:p.source_url||'',
+        sourceUpdatedAt:p.source_modified_at||'',
+        countriesTags:Array.isArray(p.countries_tags)?p.countries_tags:[],
+        storesTags:Array.isArray(p.stores_tags)?p.stores_tags:[],
         nutritionSource:p.nutrition_source||'',
         nutritionSourceLicense:p.nutrition_source_license||'',
-        nutritionSourceUrl:p.nutrition_source_url||''
+        nutritionSourceUrl:p.nutrition_source_url||'',
+        retailerAvailability:p.retailer_availability||'',
+        targetRetailer:p.target_retailer||'',
+        retailerMatchStatus:p.retailer_match_status||''
       })).filter(isUsableProduct);
       return {products,sources:Array.isArray(data.sources)?data.sources:[],sourceStats:Array.isArray(data.sourceStats)?data.sourceStats:[],cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
     }finally{clearTimeout(timer);}
@@ -404,11 +410,16 @@
       const alternateBrand=retailer.aliases.find(a=>normalize(a)!==retailer.key);
       const preferred=base?(base+' '+(alternateBrand||retailer.key)):clean;
       const terms=[...new Set([preferred,clean].filter(Boolean))].slice(0,2);
+      const protectedRetailer=['elcorteingles','hipercor','supercor'].includes(retailer.key);
       const checks=await Promise.allSettled(terms.map(searchOpenFoodFacts));
       const found=[],errors=[];
       checks.forEach(result=>{
-        if(result.status==='fulfilled')found.push(result.value.filter(p=>productMatchesSearch(p,clean,retailer)));
-        else{errors.push(result.reason?.message||'fallo de conexión');console.warn('Búsqueda de producto de supermercado fallida',result.reason);}
+        if(result.status==='fulfilled'){
+          const candidates=protectedRetailer
+            ?result.value.map(p=>({...p,retailerAvailability:'unverified',targetRetailer:retailer.key,retailerMatchStatus:'nutrition-candidate'}))
+            :result.value;
+          found.push(candidates.filter(p=>productMatchesSearch(p,clean,retailer)));
+        }else{errors.push(result.reason?.message||'fallo de conexión');console.warn('Búsqueda de producto de supermercado fallida',result.reason);}
       });
       const merged=mergeProducts(local,...found).filter(p=>productMatchesSearch(p,clean,retailer));
       lastSearchSources=checks.some(r=>r.status==='fulfilled')?['Open Food Facts']:[];
@@ -475,12 +486,16 @@
     const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
     const nutritionLabel=p.nutritionSource&&p.nutritionSource!==p.source?' · nutrientes: '+p.nutritionSource:'';
     const sourceLabel=(p.source||'Fuente no indicada')+nutritionLabel;
+    const modifiedDate=p.sourceUpdatedAt&&!Number.isNaN(new Date(p.sourceUpdatedAt).getTime())?new Date(p.sourceUpdatedAt).toLocaleDateString('es-ES'):'';
+    const freshnessLabel=modifiedDate?' · ficha de la fuente modificada '+modifiedDate:'';
+    const availabilityLabel=p.retailerAvailability==='unverified'
+      ?' · candidato nutricional; disponibilidad en '+({elcorteingles:'El Corte Inglés',hipercor:'Hipercor',supercor:'Supercor'}[p.targetRetailer]||'esa tienda')+' no confirmada':'';
     const observedDate=p.updatedAt&&!Number.isNaN(new Date(p.updatedAt).getTime())?new Date(p.updatedAt).toLocaleDateString('es-ES'):'';
     const priceText=p.storePrice!==null&&p.storePrice!==undefined?Number(p.storePrice).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'+(['elcorteingles','hipercor'].includes(p.storeKey)?' (web, observado '+(observedDate||'fecha no indicada')+')':' online'):'';
     const retailMeta=[p.packageSize||'',priceText].filter(Boolean).join(' · ');
     const sourceLink=['elcorteingles','hipercor'].includes(p.storeKey)&&/^https:\/\/(www\.)?(elcorteingles|hipercor)\.es\//i.test(p.sourceUrl||'')
       ?'<a href="'+esc(p.sourceUrl)+'" target="_blank" rel="noopener noreferrer">Ver ficha oficial</a>':'';
-    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small>'+(sourceLink?'<div class="source-product-link">'+sourceLink+'</div>':'')+'<div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
+    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+esc(freshnessLabel)+esc(availabilityLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small>'+(sourceLink?'<div class="source-product-link">'+sourceLink+'</div>':'')+'<div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
   }
   function officialRetailerInfo(retailer){
@@ -490,19 +505,19 @@
       elcorteingles:{
         url:'https://www.elcorteingles.es/supermercado/',
         label:'Abrir supermercado de El Corte Inglés',
-        note:'No hay un feed autorizado de su surtido conectado a Ración. Sus términos prohíben compilar listas de productos/precios mediante extracción automatizada sin autorización previa por escrito. Ración no usa las fichas recogidas como inventario. Las coincidencias de marca propia en fuentes abiertas o nutrición por EAN no confirman existencias ni precio actual.',
+        note:'No hay un feed autorizado de su surtido conectado a Ración. Mientras tanto, la app puede mostrar candidatos nutricionales actuales de fuentes abiertas (con fecha de modificación cuando está disponible) y fichas AESAN de 2022. No son un inventario de la tienda y no confirman que el producto se venda allí, ni su stock o precio. Para importar el catálogo completo hace falta una API/feed autorizado o permiso escrito.',
         nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
       },
       hipercor:{
         url:'https://www.hipercor.es/supermercado/',
         label:'Abrir supermercado Hipercor',
-        note:'No hay un feed de catálogo autorizado y conectado para Hipercor. Ración no compila sus páginas de producto de forma automatizada. Las coincidencias de fuentes nutricionales abiertas se muestran solo cuando la marca o el EAN encajan y no confirman disponibilidad actual.',
+        note:'No hay un feed de catálogo autorizado y conectado para Hipercor. Mientras tanto, Ración puede mostrar candidatos nutricionales actuales para el alimento buscado y fichas AESAN de 2022; no son un listado de existencias de Hipercor ni confirman precio o stock. Para el surtido completo necesitamos una integración autorizada.',
         nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
       },
       supercor:{
         url:'https://www.supercor.es/catalogos-digitales/',
         label:'Abrir catálogos oficiales de Supercor',
-        note:'No hay un catálogo de referencias de Supercor conectado a Ración. No se presentarán productos de El Corte Inglés como si estuvieran en Supercor. Puedes buscar por EAN para consultar datos nutricionales o introducir la etiqueta manualmente.',
+        note:'No hay un catálogo de referencias de Supercor conectado a Ración. Puedes consultar candidatos nutricionales actuales para el alimento buscado, pero no se presentan como surtido de Supercor ni se confirma que estén disponibles allí. Para el catálogo completo hace falta un feed autorizado.',
         nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (requiere registro)'
       }
     };
