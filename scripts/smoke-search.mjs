@@ -28,7 +28,7 @@ const calcEnd = appSource.indexOf("  function fmtKcal(", calcStart);
 if (calcStart < 0 || calcEnd < 0) throw new Error("Nutrition quantity helpers not found");
 const calcContext = {};
 runInNewContext(appSource.slice(calcStart, calcEnd) +
-  "\nglobalThis.__kcalFor = kcalFor; globalThis.__nutrientFor = nutrientFor;", calcContext);
+  String.fromCharCode(10) + "globalThis.__kcalFor = kcalFor; globalThis.__nutrientFor = nutrientFor;", calcContext);
 const kcalForTest = calcContext.__kcalFor;
 const nutrientForTest = calcContext.__nutrientFor;
 const productForCalc = {kcal:61, protein:3.8, carbs:5, fat:3.1};
