@@ -23,6 +23,10 @@ if (!appSource.includes("function openQuantityForProduct") ||
 if (!appSource.includes("racion-search-cache-v23")) {
   throw new Error("La caché local no se ha invalidado tras mostrar la antigüedad nutricional y el estado de catálogo ECI");
 }
+if (!appSource.includes("search_food_catalog_for_source_multi") &&
+    !appSource.includes("function searchSharedCatalog")) {
+  throw new Error("No se encuentra el cliente de búsqueda del catálogo con priorización por supermercado");
+}
 if (!appSource.includes("observedYear:numOrNull(p.observed_year)") ||
     !appSource.includes("nutritionSourceYear:numOrNull(p.nutrition_source_year)") ||
     !appSource.includes("lastCatalogMode=shared.catalogMode||''") ||
@@ -300,6 +304,10 @@ for (const check of addedStores) {
   if (stat.status === "error" || direct.length === 0) {
     throw new Error(check.label + " no devolvió productos propios ni desde caché: " +
       JSON.stringify({stat, sourceStats:data.sourceStats, products:data.products.slice(0,3)}));
+  }
+  if (check.key === "bonarea" && !direct.some(product => /^leche\b/.test(normalize(product.name)))) {
+    throw new Error("La búsqueda específica de Bonàrea no priorizó sus productos de leche: " +
+      JSON.stringify({stat, sourceStats:data.sourceStats, products:direct.slice(0,5)}));
   }
   if (check.key === "supercor" && !String(stat.source).includes("no verificado")) {
     throw new Error("La API debe marcar Supercor como candidato nutricional interno, no como catálogo directo.");
