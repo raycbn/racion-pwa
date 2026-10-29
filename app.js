@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v20';
+  const SEARCH_CACHE_KEY='racion-search-cache-v21';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -493,58 +493,28 @@
   }
   function productCard(p,options={}){
     const wrap=document.createElement('div');wrap.className='result-product';
-    const img=p.image?'<img src="'+esc(p.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">':'<div class="result-fallback">◉</div>';
-    const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]].filter(([,v])=>v!==null&&v!==undefined).map(([name,v])=>name+' '+fmt(v)+'g').join(' · ');
-    const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+p.unit;
-    const nutritionLabel=p.nutritionSource&&p.nutritionSource!==p.source?' · nutrientes: '+p.nutritionSource:'';
+    const img=p.image
+      ?'<img src="'+esc(p.image)+'" alt="" loading="lazy" referrerpolicy="no-referrer">'
+      :'<div class="result-fallback">◉</div>';
+    const macros=[['Proteína',p.protein],['Hidratos',p.carbs],['Grasa',p.fat]]
+      .filter(([,v])=>v!==null&&v!==undefined)
+      .map(([name,v])=>name+' '+fmt(v)+'g').join(' · ');
+    const calories=p.kcal===null?'kcal no disponibles':fmt(p.kcal)+' kcal/100'+(p.unit==='ml'?'ml':'g');
+    const nutritionLabel=p.nutritionSource&&p.nutritionSource!==p.source
+      ?' · nutrientes: '+p.nutritionSource:'';
     const sourceLabel=(p.source||'Fuente no indicada')+nutritionLabel;
-    const modifiedDate=p.sourceUpdatedAt&&!Number.isNaN(new Date(p.sourceUpdatedAt).getTime())?new Date(p.sourceUpdatedAt).toLocaleDateString('es-ES'):'';
-    const freshnessLabel=modifiedDate?' · ficha de la fuente modificada '+modifiedDate:'';
-    const availabilityLabel=p.retailerAvailability==='unverified'
-      ?' · candidato nutricional; disponibilidad en '+({elcorteingles:'El Corte Inglés',hipercor:'Hipercor',supercor:'Supercor'}[p.targetRetailer]||'esa tienda')+' no confirmada':'';
-    const observedDate=p.updatedAt&&!Number.isNaN(new Date(p.updatedAt).getTime())?new Date(p.updatedAt).toLocaleDateString('es-ES'):'';
-    const priceText=p.storePrice!==null&&p.storePrice!==undefined?Number(p.storePrice).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €'+(['elcorteingles','hipercor'].includes(p.storeKey)?' (web, observado '+(observedDate||'fecha no indicada')+')':' online'):'';
-    const retailMeta=[p.packageSize||'',priceText].filter(Boolean).join(' · ');
-    const sourceLink=['elcorteingles','hipercor'].includes(p.storeKey)&&/^https:\/\/(www\.)?(elcorteingles|hipercor)\.es\//i.test(p.sourceUrl||'')
-      ?'<a href="'+esc(p.sourceUrl)+'" target="_blank" rel="noopener noreferrer">Ver ficha oficial</a>':'';
-    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+esc(freshnessLabel)+esc(availabilityLabel)+(retailMeta?' · '+esc(retailMeta):'')+' · '+calories+'</small>'+(sourceLink?'<div class="source-product-link">'+sourceLink+'</div>':'')+'<div class="nutri-chips">'+(p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+(macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+'</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
-    wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));return wrap;
-  }
-  function officialRetailerInfo(retailer){
-    if(!retailer)return null;
-    const nutritionUrl='https://www.fen.org.es/nutrifen/inicio';
-    const links={
-      elcorteingles:{
-        url:'https://www.elcorteingles.es/supermercado/',
-        label:'Abrir supermercado de El Corte Inglés',
-        note:'No hay un feed autorizado de su surtido conectado a Ración. Mientras tanto, la app puede mostrar candidatos nutricionales actuales de fuentes abiertas (con fecha de modificación cuando está disponible) y fichas AESAN de 2022. No son un inventario de la tienda y no confirman que el producto se venda allí, ni su stock o precio. Para importar el catálogo completo hace falta una API/feed autorizado o permiso escrito.',
-        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (consulta online)'
-      },
-      hipercor:{
-        url:'https://www.hipercor.es/supermercado/',
-        label:'Abrir supermercado Hipercor',
-        note:'No hay un feed de catálogo autorizado y conectado para Hipercor. Mientras tanto, Ración puede mostrar candidatos nutricionales actuales para el alimento buscado y fichas AESAN de 2022; no son un listado de existencias de Hipercor ni confirman precio o stock. Para el surtido completo necesitamos una integración autorizada.',
-        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (consulta online)'
-      },
-      supercor:{
-        url:'https://www.supercor.es/catalogos-digitales/',
-        label:'Abrir catálogos oficiales de Supercor',
-        note:'No hay un catálogo de referencias de Supercor conectado a Ración. Puedes consultar candidatos nutricionales actuales para el alimento buscado, pero no se presentan como surtido de Supercor ni se confirma que estén disponibles allí. Para el catálogo completo hace falta un feed autorizado.',
-        nutritionUrl,nutritionLabel:'Consultar NUTRIFEN actualizado (consulta online)'
-      }
-    };
-    return links[retailer.key]||null;
-  }
-  function retailerCatalogNote(retailer){
-    const info=officialRetailerInfo(retailer);
-    if(!info)return null;
-    const note=document.createElement('div');
-    note.className='search-placeholder retailer-catalog-note';
-    const nutritionLink=info.nutritionUrl
-      ?'<p><a href="'+esc(info.nutritionUrl)+'" target="_blank" rel="noopener noreferrer">'+esc(info.nutritionLabel||'Consultar fuente nutricional')+'</a></p>'
-      :'';
-    note.innerHTML='<p>'+esc(info.note)+'</p><p><a href="'+esc(info.url)+'" target="_blank" rel="noopener noreferrer">'+esc(info.label)+'</a></p>'+nutritionLink;
-    return note;
+    const modifiedDate=p.sourceUpdatedAt&&!Number.isNaN(new Date(p.sourceUpdatedAt).getTime())
+      ?new Date(p.sourceUpdatedAt).toLocaleDateString('es-ES'):'';
+    const freshnessLabel=modifiedDate?' · fuente actualizada '+modifiedDate:'';
+    // Ración is a food diary, not a shopping/stock app: show food identity and nutrition only.
+    wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+
+      esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+esc(freshnessLabel)+' · '+calories+
+      '</small><div class="nutri-chips">'+
+      (p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+
+      (macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+
+      '</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
+    wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));
+    return wrap;
   }
   async function resolveDrafts(){
     $('draftList').innerHTML='';for(const d of pendingDrafts){if(d.status==='matched' || d.status==='selected')continue;if(d.status==='quantity-needed'||d.status==='unit-mismatch')continue;
@@ -627,12 +597,8 @@
             ?'No encontramos productos relevantes de '+esc(retailer.key)+' para «'+esc(q)+'». No mostraremos productos de otras marcas ni alimentos que solo mencionen yogur como ingrediente. Prueba con otro nombre o introduce los datos de la etiqueta.'
             :'No encontramos una coincidencia relevante para «'+esc(q)+'». Prueba con el nombre genérico, la marca o el código de barras. También puedes crear el producto con su etiqueta.';
         out.innerHTML='<div class="search-placeholder"><span>⌕</span><p>'+msg+'</p></div>';
-        const officialNote=retailerCatalogNote(retailer);
-        if(officialNote)out.appendChild(officialNote);
         return;
       }
-      const officialNote=retailerCatalogNote(retailer);
-      if(officialNote)out.appendChild(officialNote);
       all.forEach(p=>out.appendChild(productCard(p,{onSelect:openQuantityForProduct})));
     }catch(err){
       out.innerHTML='';

@@ -2,21 +2,26 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
-if (!appSource.includes("Consultar NUTRIFEN actualizado (consulta online)")) {
-  throw new Error("La búsqueda ECI no enlaza la fuente nutricional actualizada NUTRIFEN");
+if (appSource.includes("retailerCatalogNote(") ||
+    appSource.includes("officialRetailerInfo(") ||
+    appSource.includes("candidato nutricional; disponibilidad en ") ||
+    appSource.includes("priceText") ||
+    appSource.includes("Ver ficha oficial") ||
+    appSource.includes("Abrir supermercado de El Corte Inglés") ||
+    appSource.includes("Consultar NUTRIFEN actualizado (consulta online)")) {
+  throw new Error("La interfaz no debe mostrar stock, precios ni enlaces comerciales: Ración es un diario nutricional");
 }
-if (!appSource.includes("ficha de la fuente modificada") ||
-    !appSource.includes("candidato nutricional; disponibilidad en ") ||
+if (!appSource.includes("fuente actualizada") ||
     !appSource.includes("sourceUpdatedAt:p.source_modified_at")) {
-  throw new Error("La interfaz no muestra la frescura nutricional ni la disponibilidad no verificada");
+  throw new Error("La interfaz debe conservar la fecha real de actualización de la fuente nutricional cuando exista");
 }
-if (!appSource.includes("feed autorizado") ||
-    !appSource.includes("permiso escrito") ||
-    appSource.includes("Ración incluye una muestra de fichas públicas de El Corte Inglés")) {
-  throw new Error("El texto ECI/Hipercor no refleja que hace falta un feed o permiso autorizado");
+if (!appSource.includes("function openQuantityForProduct") ||
+    !appSource.includes("onSelect:openQuantityForProduct") ||
+    !appSource.includes("function productNutritionScore")) {
+  throw new Error("La selección del alimento, la cantidad consumida y la fusión de nutrientes deben seguir funcionando");
 }
-if (!appSource.includes("racion-search-cache-v20")) {
-  throw new Error("La caché local no se ha invalidado tras retirar las muestras antiguas");
+if (!appSource.includes("racion-search-cache-v21")) {
+  throw new Error("La caché local no se ha invalidado tras retirar la información comercial");
 }
 const mergeStart = appSource.indexOf("  function productNutritionScore(");
 const mergeEnd = appSource.indexOf("  function rememberSearch", mergeStart);
@@ -65,12 +70,12 @@ const mergedCandidate = mergeProductsTest([localNutritionProduct],[hipercorNutri
 if (mergedCandidate.length !== 1 ||
     mergedCandidate[0].retailerAvailability !== "unverified" ||
     mergedCandidate[0].targetRetailer !== "hipercor") {
-  throw new Error("La deduplicación perdió la advertencia de disponibilidad no verificada");
+  throw new Error("La fusión perdió el destino interno de la búsqueda nutricional para Hipercor");
 }
-console.log("OK fusión ECI/Hipercor/Supercor → conserva la advertencia de disponibilidad");
+console.log("OK fusión ECI/Hipercor/Supercor → conserva metadatos internos de búsqueda");
 
 
-console.log("Smoke catalog version: no unauthorized ECI/Hipercor/Supercor product-list extraction; official links + open nutrition sources");
+console.log("Smoke catalog version: diario nutricional, sin UI de stock/precios/enlaces comerciales; fuentes abiertas tras la búsqueda");
 
 const endpoint = "https://xegxzmicbxbqjelkvhlx.supabase.co/functions/v1/food-search";
 const publishableKey = "sb_publishable_4rSZWrVGGkZ1yfmiTGTChA_lPkLqahd";
@@ -264,7 +269,7 @@ for (const check of addedStores) {
       JSON.stringify({stat, sourceStats:data.sourceStats, products:data.products.slice(0,3)}));
   }
   if (check.key === "supercor" && !String(stat.source).includes("no verificado")) {
-    throw new Error("La búsqueda Supercor debe advertir que el stock en tienda no está verificado.");
+    throw new Error("La API debe marcar Supercor como candidato nutricional interno, no como catálogo directo.");
   }
   console.log("OK cadena nueva", check.label, "→", direct.length,
     "productos propios; fuentes:", JSON.stringify(data.sourceStats));
@@ -293,7 +298,7 @@ for(const check of eciChecks) {
     stat.status==="not-integrated" && Number(stat.products)===0
   );
   if(!notice) {
-    throw new Error(check.label+" debe mostrar explícitamente que no hay catálogo de tienda autorizado conectado.");
+    throw new Error(check.label+" debe conservar en el diagnóstico interno que aún no existe catálogo autorizado conectado.");
   }
   const wronglyUnlabeled=data.products.filter(product => {
     const text=normalize(String(product.brand||"")+" "+String(product.name||""));
@@ -302,7 +307,7 @@ for(const check of eciChecks) {
       (product.retailer_availability!=="unverified" || product.target_retailer!==check.key);
   });
   if(wronglyUnlabeled.length) {
-    throw new Error(check.label+" devolvió candidatos nutricionales sin advertencia de disponibilidad: "+
+    throw new Error(check.label+" devolvió candidatos sin el destino interno de búsqueda: "+
       JSON.stringify(wronglyUnlabeled.slice(0,3)));
   }
   const exactBrandPositions=data.products
@@ -322,7 +327,7 @@ for(const check of eciChecks) {
   if(data.products.some(product=>product.source==="aesan"&&Number(product.observed_year)!==2022)) {
     throw new Error(check.label+" presenta el respaldo AESAN con un año incorrecto.");
   }
-  console.log("OK política",check.label,"→ candidatos nutricionales etiquetados; no se presenta como surtido ni stock.");
+  console.log("OK búsqueda nutricional",check.label,"→ candidatos de fuentes abiertas con metadatos internos; sin bloque comercial en la app.");
   console.log("ECI candidate diagnostics",check.label,JSON.stringify({
     returnedProducts:data.products.length,
     sources:data.sources,
