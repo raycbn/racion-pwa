@@ -86,12 +86,13 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v22';
+  const SEARCH_CACHE_KEY='racion-search-cache-v23';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
   let lastSearchDiagnostics=[];
   let lastSearchError='';
+  let lastCatalogMode='';
   let searchCache={};
   try{searchCache=JSON.parse(localStorage.getItem(SEARCH_CACHE_KEY)||'{}')||{};}catch{searchCache={};}
   const genericTranslations=[
@@ -323,7 +324,11 @@
   function rememberSearch(term, products, sources){
     lastSearchSources=sources.slice();
     if(!products.length)return;
-    searchCache[normalize(term)]={savedAt:Date.now(),sources:sources.slice(),products:products.slice(0,20)};
+    searchCache[normalize(term)]={
+      savedAt:Date.now(),sources:sources.slice(),products:products.slice(0,20),
+      catalogMode:lastCatalogMode,
+      sourceStats:Array.isArray(lastSearchDiagnostics)?lastSearchDiagnostics.slice():[]
+    };
     const keys=Object.keys(searchCache).sort((a,b)=>(searchCache[b].savedAt||0)-(searchCache[a].savedAt||0));
     for(const key of keys.slice(80))delete searchCache[key];
     try{localStorage.setItem(SEARCH_CACHE_KEY,JSON.stringify(searchCache));}catch(e){console.warn('La caché de búsqueda está llena',e);}
@@ -378,11 +383,15 @@
         nutritionSource:p.nutrition_source||'',
         nutritionSourceLicense:p.nutrition_source_license||'',
         nutritionSourceUrl:p.nutrition_source_url||'',
+        observedYear:numOrNull(p.observed_year),
+        nutritionSourceYear:numOrNull(p.nutrition_source_year),
+        dataQuality:p.data_quality||'',
+        catalogMode:data.catalogMode||'',
         retailerAvailability:p.retailer_availability||'',
         targetRetailer:p.target_retailer||'',
         retailerMatchStatus:p.retailer_match_status||''
       })).filter(isUsableProduct);
-      return {products,sources:Array.isArray(data.sources)?data.sources:[],sourceStats:Array.isArray(data.sourceStats)?data.sourceStats:[],cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
+      return {products,sources:Array.isArray(data.sources)?data.sources:[],sourceStats:Array.isArray(data.sourceStats)?data.sourceStats:[],catalogMode:data.catalogMode||'',cached:Boolean(data.cached),failed:Boolean(data.failed),searched:Boolean(data.searched),unavailable:Boolean(data.unavailable)};
     }finally{clearTimeout(timer);}
   }
   async function offSearch(term){
@@ -390,18 +399,25 @@
     if(!clean)return [];
     lastSearchError='';
     lastSearchDiagnostics=[];
+    lastCatalogMode='';
     const key=normalize(clean);
     const retailer=retailerIntentForSearch(clean);
     const cached=searchCache[key];
     if(cached&&Date.now()-cached.savedAt<SEARCH_CACHE_TTL&&Array.isArray(cached.products)){
       const products=cached.products.filter(p=>productMatchesSearch(p,clean,retailer));
-      if(products.length){lastSearchSources=['Caché local'];return products;}
+      if(products.length){
+        lastSearchSources=['Caché local'];
+        lastCatalogMode=cached.catalogMode||products.find(p=>p.catalogMode)?.catalogMode||'';
+        lastSearchDiagnostics=Array.isArray(cached.sourceStats)?cached.sourceStats:[];
+        return products;
+      }
       // Discard old or irrelevant cached results for this query.
     }
     const localAll=state.products.filter(p=>productMatchesSearch(p,clean,retailer));
     const local=localAll.slice(0,8);
     try{
       const shared=await searchSharedCatalog(clean);
+      lastCatalogMode=shared.catalogMode||'';
       lastSearchDiagnostics=Array.isArray(shared.sourceStats)?shared.sourceStats:[];
       const sharedProducts=shared.products.filter(p=>productMatchesSearch(p,clean,retailer));
       if(sharedProducts.length){
@@ -506,11 +522,22 @@
     const modifiedDate=p.sourceUpdatedAt&&!Number.isNaN(new Date(p.sourceUpdatedAt).getTime())
       ?new Date(p.sourceUpdatedAt).toLocaleDateString('es-ES'):'';
     const freshnessLabel=modifiedDate?' · fuente actualizada '+modifiedDate:'';
+    const datasetYear=Number(p.observedYear||p.nutritionSourceYear)||(/AESAN\s*\(2022\)/i.test(String(p.source||''))?2022:0);
+    const historicalLabel=datasetYear&&datasetYear<new Date().getFullYear()
+      ?' · dato nutricional de '+datasetYear+'; puede no reflejar la etiqueta actual':'';
+    const retailerName=({elcorteingles:'El Corte Inglés',hipercor:'Hipercor',supercor:'Supercor'}[p.targetRetailer]||'');
+    const retailerNote=p.retailerAvailability==='unverified'&&retailerName
+      ?(p.retailerMatchStatus==='brand-match-not-stock-confirmed'
+        ?' · marca coincidente; producto actual no verificado en '+retailerName
+        :' · candidato nutricional; producto actual no verificado en '+retailerName)
+      :'';
     // Ración is a food diary, not a shopping/stock app: show food identity and nutrition only.
     wrap.innerHTML=img+'<div class="result-copy"><strong>'+esc(p.name)+'</strong><small>'+
-      esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+esc(freshnessLabel)+' · '+calories+
+      esc(p.brand||'Sin marca')+' · '+esc(sourceLabel)+esc(freshnessLabel)+esc(historicalLabel)+esc(retailerNote)+' · '+calories+
       '</small><div class="nutri-chips">'+
       (p.kcal===null?'<span class="nutri-chip">Sin calorías verificadas</span>':'<span class="nutri-chip">'+fmt(p.kcal)+' kcal</span>')+
+      (datasetYear&&datasetYear<new Date().getFullYear()?'<span class="nutri-chip">Ficha histórica '+datasetYear+'</span>':'')+
+      (retailerName&&p.retailerAvailability==='unverified'?'<span class="nutri-chip">Tienda no verificada</span>':'')+
       (macros?'<span class="nutri-chip">'+esc(macros)+'</span>':'')+
       '</div></div><button type="button">'+esc(options.buttonText||'Seleccionar')+'</button>';
     wrap.querySelector('button').addEventListener('click',()=>options.onSelect?.(p));
@@ -572,6 +599,13 @@
     }
     const enriched=products.filter(product=>Boolean(product.nutritionSource)).length;
     if(enriched)parts.push(enriched+' producto'+(enriched===1?'':'s')+' con nutrientes enlazados por código de barras');
+    if(lastCatalogMode==='nutrition-candidates-not-store-inventory' ||
+       products.some(product=>product.retailerAvailability==='unverified'&&['elcorteingles','hipercor','supercor'].includes(product.targetRetailer))){
+      parts.push('El catálogo actual de El Corte Inglés/Hipercor/Supercor no está conectado; los resultados son candidatos nutricionales, no productos actuales confirmados.');
+    }
+    if(products.some(product=>Number(product.observedYear)===2022||product.dataQuality==='aesan-2022')){
+      parts.push('AESAN corresponde a datos de 2022; comprueba la etiqueta del envase.');
+    }
     parts.push('Los nutrientes que faltan no se estiman.');
     return parts.join(' · ');
   }

@@ -20,8 +20,15 @@ if (!appSource.includes("function openQuantityForProduct") ||
     !appSource.includes("function productNutritionScore")) {
   throw new Error("La selección del alimento, la cantidad consumida y la fusión de nutrientes deben seguir funcionando");
 }
-if (!appSource.includes("racion-search-cache-v22")) {
-  throw new Error("La caché local no se ha invalidado tras retirar la información comercial");
+if (!appSource.includes("racion-search-cache-v23")) {
+  throw new Error("La caché local no se ha invalidado tras mostrar la antigüedad nutricional y el estado de catálogo ECI");
+}
+if (!appSource.includes("observedYear:numOrNull(p.observed_year)") ||
+    !appSource.includes("nutritionSourceYear:numOrNull(p.nutrition_source_year)") ||
+    !appSource.includes("lastCatalogMode=shared.catalogMode||''") ||
+    !appSource.includes("Ficha histórica '+datasetYear") ||
+    !appSource.includes("no está conectado; los resultados son candidatos nutricionales, no productos actuales confirmados.")) {
+  throw new Error("La interfaz debe indicar que AESAN es histórico y que ECI/Hipercor/Supercor no son catálogos actuales confirmados");
 }
 const calcStart = appSource.indexOf("  function kcalFor(");
 const calcEnd = appSource.indexOf("  function fmtKcal(", calcStart);
@@ -208,8 +215,9 @@ const barcodeLookup = await search(knownAesanBarcode);
 const matchedAesanBarcode = barcodeLookup.products.find(product =>
   product.source === "aesan" && String(product.barcode || "").replace(/\D/g, "") === knownAesanBarcode
 );
-if (!matchedAesanBarcode || Number(matchedAesanBarcode.kcal) !== 31) {
-  throw new Error("El EAN de prueba AESAN no devuelve las calorías esperadas: " +
+if (!matchedAesanBarcode || Number(matchedAesanBarcode.kcal) !== 31 ||
+    Number(matchedAesanBarcode.observed_year) !== 2022) {
+  throw new Error("El EAN de prueba AESAN debe devolver las calorías esperadas y el año histórico 2022: " +
     JSON.stringify({products:barcodeLookup.products, sourceStats:barcodeLookup.sourceStats}));
 }
 console.log("OK EAN AESAN", knownAesanBarcode, "→", matchedAesanBarcode.name,
@@ -223,8 +231,10 @@ const enrichedStoreProduct = storeLookup.products.find(product =>
 );
 if (!enrichedStoreProduct ||
     Number(enrichedStoreProduct.kcal) !== 20 ||
-    !["AESAN (2022)","Open Food Facts"].includes(enrichedStoreProduct.nutrition_source)) {
-  throw new Error("El producto de Consum no obtuvo respaldo nutricional AESAN por EAN: " +
+    !["AESAN (2022)","Open Food Facts"].includes(enrichedStoreProduct.nutrition_source) ||
+    (enrichedStoreProduct.nutrition_source === "AESAN (2022)" &&
+      Number(enrichedStoreProduct.nutrition_source_year) !== 2022)) {
+  throw new Error("El producto de Consum debe conservar la fuente y el año de los nutrientes enlazados por EAN: " +
     JSON.stringify({products:storeLookup.products,sourceStats:storeLookup.sourceStats}));
 }
 console.log("OK nutrición de tienda por EAN →",
