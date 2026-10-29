@@ -28,16 +28,16 @@ const calcEnd = appSource.indexOf("  function fmtKcal(", calcStart);
 if (calcStart < 0 || calcEnd < 0) throw new Error("Nutrition quantity helpers not found");
 const calcContext = {};
 runInNewContext(appSource.slice(calcStart, calcEnd) +
-  "\\nglobalThis.__kcalFor = kcalFor; globalThis.__nutrientFor = nutrientFor;", calcContext);
+  "\nglobalThis.__kcalFor = kcalFor; globalThis.__nutrientFor = nutrientFor;", calcContext);
 const kcalForTest = calcContext.__kcalFor;
 const nutrientForTest = calcContext.__nutrientFor;
 const productForCalc = {kcal:61, protein:3.8, carbs:5, fat:3.1};
 if (kcalForTest(productForCalc,150) !== 91.5) {
   throw new Error("150 g of a 61 kcal/100 g product must calculate to 91.5 kcal");
 }
-if (nutrientForTest(productForCalc,"protein",150) !== 5.699999999999999) {
-  const protein = nutrientForTest(productForCalc,"protein",150);
-  if (Math.abs(protein-5.7)>1e-9) throw new Error("Protein calculation for 150 g must be 5.7 g");
+const proteinForCalc = nutrientForTest(productForCalc,"protein",150);
+if (Math.abs(proteinForCalc-5.7)>1e-9) {
+  throw new Error("Protein calculation for 150 g must be 5.7 g");
 }
 if (kcalForTest({kcal:null},150) !== null) {
   throw new Error("Unknown calories must remain unknown rather than being invented");
