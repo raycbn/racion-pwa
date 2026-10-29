@@ -317,9 +317,9 @@ for (const check of addedStores) {
 }
 
 const eciChecks = [
-  {query:"Yogur El Corte Inglés",key:"elcorteingles",label:"El Corte Inglés",aliases:["el corte ingles","corte ingles","elcorteingles","eci"]},
-  {query:"Leche Hipercor",key:"hipercor",label:"Hipercor",aliases:["hipercor"]},
-  {query:"Yogur Supercor",key:"supercor",label:"Supercor",aliases:["supercor"]}
+  {query:"Yogur El Corte Inglés",key:"elcorteingles",label:"El Corte Inglés",sourceLabel:"Supermercado El Corte Inglés",aliases:["el corte ingles","corte ingles","elcorteingles","eci"]},
+  {query:"Leche Hipercor",key:"hipercor",label:"Hipercor",sourceLabel:"Supermercado Hipercor",aliases:["hipercor"]},
+  {query:"Yogur Supercor",key:"supercor",label:"Supercor",sourceLabel:"Supercor",aliases:["supercor"]}
 ];
 for(const check of eciChecks) {
   const data=await search(check.query);
@@ -340,6 +340,10 @@ for(const check of eciChecks) {
   );
   if(!notice) {
     throw new Error(check.label+" debe conservar en el diagnóstico interno que aún no existe catálogo autorizado conectado.");
+  }
+  if(notice.source!==check.sourceLabel) {
+    throw new Error(check.label+" debe mostrar el nombre correcto de la fuente sin integración: "+
+      JSON.stringify({expected:check.sourceLabel,actual:notice.source}));
   }
   const wronglyUnlabeled=data.products.filter(product => {
     const text=normalize(String(product.brand||"")+" "+String(product.name||""));
