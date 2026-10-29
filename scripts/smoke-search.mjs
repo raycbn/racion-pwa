@@ -20,7 +20,7 @@ if (!appSource.includes("function openQuantityForProduct") ||
     !appSource.includes("function productNutritionScore")) {
   throw new Error("La selección del alimento, la cantidad consumida y la fusión de nutrientes deben seguir funcionando");
 }
-if (!appSource.includes("racion-search-cache-v21")) {
+if (!appSource.includes("racion-search-cache-v22")) {
   throw new Error("La caché local no se ha invalidado tras retirar la información comercial");
 }
 const mergeStart = appSource.indexOf("  function productNutritionScore(");

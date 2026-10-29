@@ -1,5 +1,5 @@
-const CACHE_NAME = 'racion-static-v23';
-const APP_SHELL = ['./', './index.html', './styles.css', './app.js?v=20261029-food-diary-only-v1', './migrate.js', './manifest.webmanifest', './icon.svg'];
+const CACHE_NAME = 'racion-static-v24';
+const APP_SHELL = ['./', './index.html', './styles.css', './app.js?v=20261029-eci-nutrition-search-v2', './migrate.js', './manifest.webmanifest', './icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
 });

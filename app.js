@@ -86,7 +86,7 @@
   }
   function numOrNull(v){if(v===null||v===undefined||v===''||!Number.isFinite(Number(v)))return null;return Number(v);}
   function isUsableProduct(p){return p && p.name && p.name!=='Producto sin nombre' && (p.kcal!==null || p.barcode || p.image || p.storeKey);}
-  const SEARCH_CACHE_KEY='racion-search-cache-v21';
+  const SEARCH_CACHE_KEY='racion-search-cache-v22';
   const SEARCH_CACHE_TTL=7*24*60*60*1000;
   const FDC_DEMO_KEY='DEMO_KEY'; // Public USDA demo credential; replaced by a server-side key once Supabase proxy is connected.
   let lastSearchSources=[];
@@ -111,7 +111,7 @@
     {key:'alcampo',aliases:['alcampo','auchan']},
     {key:'consum',aliases:['consum']},
     {key:'ahorramas',aliases:['ahorramas']},
-    {key:'elcorteingles',aliases:['el corte ingles','corte ingles','elcorteingles','eci']},
+    {key:'elcorteingles',aliases:['el corte ingles','corte ingles','elcorteingles','eci','aliada','el corte ingles selection']},
     {key:'hipercor',aliases:['hipercor']},
     {key:'supercor',aliases:['supercor']},
     {key:'gadis',aliases:['gadis']},
