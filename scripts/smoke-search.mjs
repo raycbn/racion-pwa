@@ -264,8 +264,11 @@ for (const check of addedStores) {
   }
   const expectedSource = check.key === "supercor" ? "elcorteingles" : check.key;
   const direct = data.products.filter(product => product.source === expectedSource);
-  if (stat.status === "error" || stat.products === 0 || direct.length === 0) {
-    throw new Error(check.label + " no devolvió productos del catálogo esperado: " +
+  // A retailer endpoint may be temporarily empty while valid products already exist
+  // in Ración's shared cache. Require a real result card from that source; treat the
+  // live endpoint count as diagnostics, not as a stock or availability signal.
+  if (stat.status === "error" || direct.length === 0) {
+    throw new Error(check.label + " no devolvió productos propios ni desde caché: " +
       JSON.stringify({stat, sourceStats:data.sourceStats, products:data.products.slice(0,3)}));
   }
   if (check.key === "supercor" && !String(stat.source).includes("no verificado")) {
